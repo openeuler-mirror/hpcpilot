@@ -9,58 +9,7 @@ shell
 
 #### 安装教程
 
-1.	从网址 https://gitee.com/openeuler/hpcpilot下载压缩包, 解压至{SHARE_PATH}/software/tools/目录下:
-注：SHARE_PATH为实际共享目录	
-[root@arm47 hpc_script]# pwd
-/share/software/tools/hpc_script
-[root@arm47 hpc_script]# ll
-total 56K
--rwxrwxr-x 1 root root  12K Mar 16 15:01 auto_install_tools.sh
-drwxr-xr-x 2 root root 4.0K Mar 16 14:47 basic_script
-drwxr-xr-x 2 root root 4.0K Mar 20 09:28 benchmark_script
--rw-r--r-- 1 root root  18K Mar 16 15:01 common.sh
--rw-r--r-- 1 root root  141 Mar 15 09:09 hostname.csv
-drwxr-xr-x 2 root root 4.0K Mar 20 09:53 service_script
--rw-r--r-- 1 root root 2.1K Mar 17 17:49 setting.ini
--rw-r--r-- 1 root root 2.1K Mar 15 09:20 users.json
-2.	将附件中的脚本上传到对应的目录中，目录结构如下:
-[root@arm226 hpc_script]# tree -A -C
-.
-├── auto_install_tools.sh
-├── basic_script
-│   ├── auto_check_script.sh
-│   ├── auto_init_script.sh
-│   ├── auto_install_script.sh
-│   ├── cac_directory.sh
-│   ├── cac_firewall.sh
-│   ├── cac_hostname.sh
-│   ├── cac_ibtoroce.sh
-│   ├── cac_pass_free.sh
-│   ├── cac_selinux.sh
-│   ├── cac_ulimit.sh
-│   ├── cac_users.sh
-│   ├── cas_ansible.sh
-│   ├── cas_cuda.sh
-│   ├── cas_mellanox.sh
-│   ├── cas_nfs.sh
-│   └── cas_yum.sh
-├── benchmark_script
-│   ├── compile_bisheng_hmpi_kml.sh
-│   ├── compile_hpl.sh
-│   ├── compile_osu.sh
-│   └── compile_stream.sh
-├── common.sh
-├── hostname.csv
-├── service_script
-│   ├── install_ldap_client.sh
-│   ├── install_ldap_cli_TLS.yml
-│   ├── install_ldap_server.sh
-│   ├── install_ntp_client.sh
-│   ├── install_ntp_client.yml
-│   ├── install_ntp_server.sh
-│   └── install_ntp_server.yml
-├── setting.ini
-└── users.json
+1.  xxx
 
 
 #### 使用说明
