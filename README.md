@@ -4,14 +4,13 @@
 A collection of HPC delivery tools, including basic system configuration, node inspection, performance testing, third-party service installation, etc.
 
 #### 软件架构
-软件架构说明
+shell
 
 
 #### 安装教程
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1.  xxx
+
 
 #### 使用说明
 
