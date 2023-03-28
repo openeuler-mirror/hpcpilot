@@ -1,0 +1,47 @@
+# ------------------------------------------------------
+# 注意事项：
+# 1.键值对之间等号必须要有一个空格；
+# 2.键名字必须要有意义，容易辨认；
+# ------------------------------------------------------
+
+# ------------------------------------------------------
+# [Common Global Configuration] 全局配置设置
+# ------------------------------------------------------
+[common_global_conf]
+# 全局配置日期格式化字符串(带毫秒，主要用于日志)
+common_date_format_001 = +%Y-%m-%d %H:%M:%S:%3N
+# 全局配置日期格式化字符串(不带毫秒)
+common_date_format_002 = +%Y-%m-%d %H:%M:%S
+common_date_format_003 = +%Y%m%d%H%M%S
+# 全局配置业务系统用户密码
+common_sys_user_password = Huawei12#$123456
+# 全局配置操作系统root用户密码
+common_sys_root_password = huawei@123
+# 基础项配置脚本执行日志存放路径
+# common_operation_log_path = /usr/local/hpcTools/logs
+# ------------------------------------------------------
+# [Basic Configuration] 基础配置设置
+# ------------------------------------------------------
+[basic_conf]
+# OM运维机器主节点IP地址
+basic_om_master_ip = 9.88.49.47
+# 配置共享目录
+basic_shared_directory = /share
+# 配置节点分组信息（主要用于ANSIBLE配置文件hosts分组）
+basic_node_ip_group = ccsccp agent scheduler portal cli ntp_server ntp_client ldap_client
+# ------------------------------------------------------
+# [Test Tools Configuration] 测试工具安装配置设置
+# ------------------------------------------------------
+[benchmark_conf]
+
+# ------------------------------------------------------
+# [System Service Configuration] 系统服务安装配置设置
+# ------------------------------------------------------
+[service_conf]
+# NTP服务端IP地址
+ntp_server_ip = 9.88.49.42
+#HA场景以下4个参数均需要配置 非HA场景配置前两个参数
+ldap_login_password = huawei@123
+master_ldap_server_ip = 9.88.49.40
+slave_ldap_server_ip = 
+virtual_ldap_server_ip = 9.88.49.211

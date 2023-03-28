@@ -1,0 +1,133 @@
+- name: install ldap cli
+  hosts: ldap_client
+  gather_facts: False
+  tasks:
+  - name: install services
+    shell: yum -y install openldap-clients nss-pam-ldapd authconfig sssd oddjob oddjob-mkhomedir
+  - name: mkdir cacerts
+    shell: mkdir -p /etc/openldap/cacerts
+  - name: copy ldap.crt
+    copy:
+     src: ldap.crt
+     dest: /etc/openldap/cacerts
+  - name: chmod cacerts
+    shell: chmod -R 755 /etc/openldap/cacerts
+  - name: touch ldap.conf
+    shell: touch /etc/openldap/ldap.conf
+    ignore_errors: yes
+  - name: config ldap.conf
+    blockinfile:
+     dest: /etc/openldap/ldap.conf
+     marker: "#{mark}config"
+     block: |
+      TLS_REQCERT allow
+      TLS_CACERTDIR /etc/openldap/cacerts
+      TLS_CACERT /etc/openldap/cacerts/ldap.crt
+      URI ldaps://{{ ldap_server_ip }}
+      SSL yes
+  - name: backup sssd.conf
+    shell: mv /etc/sssd/sssd.conf /etc/sssd/sssd.conf.bak
+    ignore_errors: yes
+  - name: touch sssd.conf
+    shell: touch /etc/sssd/sssd.conf
+  - name: config sssd.conf
+    blockinfile:
+     dest: /etc/sssd/sssd.conf
+     marker: "#{mark}config"
+     block: |
+      [sssd]
+      config_file_version = 2
+      services = nss, pam
+      domains = LDAP
+      
+      [nss]
+      
+      [pam]
+      
+      [domain/LDAP]
+      id_provider = ldap
+      auth_provider = ldap
+      ldap_schema = rfc2307
+      ldap_uri = ldaps://{{ ldap_server_ip }}:636
+      ldap_search_base = dc=huawei,dc=com
+      enumerate = true
+      cache_credentials = true
+      ldap_id_use_start_tls = true
+      ldap_tls_cacertdir = /etc/openldap/cacerts
+      ldap_tls_reqcert = allow
+  - name: chmod sssd.conf
+    shell: chmod 600 /etc/sssd/sssd.conf -R
+  - name: backup system-auth
+    shell: mv /etc/pam.d/system-auth /etc/pam.d/system-auth.bak && touch /etc/pam.d/system-auth
+  - name: config system-auth
+    blockinfile:
+     dest: /etc/pam.d/system-auth
+     marker: "#{mark}config"
+     block: |
+      #%PAM-1.0
+      # This file is auto-generated.
+      # User changes will be destroyed the next time authconfig is run.
+      auth        required      pam_env.so
+      auth        required      pam_faildelay.so delay=2000000
+      auth        sufficient    pam_unix.so nullok try_first_pass
+      auth        sufficient    pam_sss.so use_first_pass
+      auth        requisite     pam_succeed_if.so uid >= 1000 quiet_success
+      auth        required      pam_deny.so
+      
+      account     required      pam_unix.so broken_shadow
+      account     sufficient    pam_succeed_if.so uid < 1000 quiet
+      account     [default=bad success=ok user_unknown=ignore] pam_sss.so
+      account     required      pam_permit.so
+      account     required      pam_oddjob_mkhomedir.so umask=0077
+      
+      password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=
+      password    sufficient    pam_unix.so md5 shadow nis nullok try_first_pass use_authtok
+      password    sufficient    pam_sss.so use_authtok
+      password    required      pam_deny.so
+      
+      session     optional      pam_keyinit.so revoke
+      session     required      pam_limits.so
+      -session     optional      pam_systemd.so
+      session     optional      pam_oddjob_mkhomedir.so umask=0077
+      session     [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
+      session     required      pam_unix.so
+      session     optional      pam_sss.so
+  - name: backup password-auth
+    shell: mv /etc/pam.d/password-auth /etc/pam.d/password-auth.bak && touch /etc/pam.d/password-auth
+  - name: config password-auth
+    blockinfile:
+     dest: /etc/pam.d/password-auth
+     marker: "#{mark}config"
+     block: |
+      #%PAM-1.0
+      # This file is auto-generated.
+      # User changes will be destroyed the next time authconfig is run.
+      auth        required      pam_env.so
+      auth        required      pam_faildelay.so delay=2000000
+      auth        sufficient    pam_unix.so nullok try_first_pass
+      auth        sufficient    pam_sss.so use_first_pass
+      auth        requisite     pam_succeed_if.so uid >= 1000 quiet_success
+      auth        required      pam_deny.so
+      
+      account     required      pam_unix.so broken_shadow
+      account     sufficient    pam_succeed_if.so uid < 1000 quiet
+      account     [default=bad success=ok user_unknown=ignore] pam_sss.so
+      account     required      pam_permit.so
+      account     required      pam_oddjob_mkhomedir.so umask=0077
+      
+      password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=
+      password    sufficient    pam_unix.so md5 shadow nis nullok try_first_pass use_authtok
+      password    sufficient    pam_sss.so use_authtok
+      password    required      pam_deny.so
+      
+      session     optional      pam_keyinit.so revoke
+      session     required      pam_limits.so
+      -session     optional      pam_systemd.so
+      session     optional      pam_oddjob_mkhomedir.so umask=0077
+      session     [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
+      session     required      pam_unix.so
+      session     optional      pam_sss.so
+  - name: restart sssd
+    shell: systemctl enable sssd && systemctl restart sssd
+  - name: restart oddjobd
+    shell: systemctl enable oddjobd && systemctl restart oddjobd

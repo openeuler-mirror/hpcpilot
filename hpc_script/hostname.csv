@@ -1,0 +1,5 @@
+host_ip,host_name,host_group
+9.88.49.40,arm40,ccsccp
+9.88.49.42,arm42,ntp_server_ip
+9.88.49.45,arm45,ntp_client_ip
+9.88.49.47,arm47,ccs
