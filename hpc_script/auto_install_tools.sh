@@ -1,6 +1,3 @@
-#
-# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
-#
 #!/usr/bin/env bash
 # 一键安装配置基础项自动化脚本
 
