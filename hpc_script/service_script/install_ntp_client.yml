@@ -1,0 +1,29 @@
+- name: install ntp client
+  hosts: ntp_client
+  gather_facts: False
+  tasks:
+  - name: stop chronyd
+    shell: systemctl stop chronyd.service && systemctl disable chronyd.service
+  - name: install ntp
+    shell: yum -y install ntp
+    #    when: ansible_distribution == "CentOS" or ansible_distribution == "openEluer" or ansible_distribution == "Red Hat Enterprise Linux" or ansible_distribution == "Kylin Linux Advanced Server"
+    #  - name: ubuntu install ntp
+    #    shell: apt-get update && apt-get install -y ntp && apt install -y ntpdate
+    #    when: ansible_distribution == "Ubuntu"
+  - name: config ntp.conf
+    replace:
+     path: /etc/ntp.conf
+     regexp: 'server '
+     replace: '#server '
+     #    when: ansible_distribution == "CentOS" or ansible_distribution == "openEluer" or ansible_distribution == "Red Hat Enterprise Linux" or ansible_distribution == "Kylin Linux Advanced Server"
+  - name: config ntp.conf
+    blockinfile:
+     dest: /etc/ntp.conf
+     marker: "#{mark}config"
+     block: server {{ ntp_server_ip }}
+  - name: restart ntp
+    shell: systemctl restart ntpd.service && systemctl enable ntpd.service
+    #    when: ansible_distribution == "CentOS" or ansible_distribution == "openEluer" or ansible_distribution == "Red Hat Enterprise Linux" or ansible_distribution == "Kylin Linux Advanced Server"
+    #  - name: ubuntu restart ntpd
+    #    shell: systemctl restart ntp.service && systemctl enable ntp.service
+    #    when: ansible_distribution == "Ubuntu"

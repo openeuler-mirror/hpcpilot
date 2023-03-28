@@ -1,22 +1,24 @@
 # hpcpilot
 
 #### Description
-A collection of HPC delivery tools, including basic system configuration, node inspection, performance testing, third-party service installation, etc.
+
+A collection of HPC delivery tools, including scripts for basic system configuration, node inspection, performance testing, and third-party service installation.
 
 #### Software Architecture
-Software architecture description
+shell
+
 
 #### Installation
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1.  Introduction to hpc_script£º
+Refer to Chapter 1 of the instructions in the hpcpilot script introduction document
+2.  run script:
+Refer to chapter 2 of the instructions in the hpcpilot script introduction document
 
-#### Instructions
+####Precautions
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+Refer to the Precautions section in the hpcpilot script introduction document
+
 
 #### Contribution
 

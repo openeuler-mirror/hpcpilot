@@ -1,22 +1,25 @@
-# hpcpilot
+﻿# hpcpilot
 
 #### 介绍
-A collection of HPC delivery tools, including basic system configuration, node inspection, performance testing, third-party service installation, etc.
+HPC交付工具合集，包括系统基础配置、节点巡检、性能测试、第三方服务安装等脚本。
 
 #### 软件架构
 shell
 
 
 #### 安装教程
-
-1.  xxx
-
+参考hpcpilot脚本介绍文档中安装教程章节
 
 #### 使用说明
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1.  hpc_script介绍：
+参考hpcpilot脚本介绍文档中使用说明章节1
+2.  运行脚本：
+参考hpcpilot脚本介绍文档中使用说明章节2
+
+####注意事项
+
+参考hpcpilot脚本介绍文档中注意事项章节
 
 #### 参与贡献
 

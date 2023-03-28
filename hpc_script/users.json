@@ -1,0 +1,94 @@
+{
+  "business_users": [
+    {
+      "user_name": "ccs_master",
+      "user_id": "60001",
+      "group_name": "ccs_master",
+      "group_id": "60001"
+    },
+    {
+      "user_name": "ccs_agent",
+      "user_id": "60002",
+      "group_name": "ccs_agent",
+      "group_id": "60002"
+    },
+    {
+      "user_name": "ccs_ignite",
+      "user_id": "60003",
+      "group_name": "ccs_ignite",
+      "group_id": "60003"
+    },
+    {
+      "user_name": "ccs_cli",
+      "user_id": "60004",
+      "group_name": "ccs_cli",
+      "group_id": "60004"
+    },
+    {
+      "user_name": "ccs_auth",
+      "user_id": "60005",
+      "group_name": "ccs_auth",
+      "group_id": "60005"
+    },
+    {
+      "user_name": "ccs_etcd",
+      "user_id": "60006",
+      "group_name": "ccs_etcd",
+      "group_id": "60006"
+    },
+    {
+      "user_name": "postgres",
+      "user_id": "60007",
+      "group_name": "postgres",
+      "group_id": "60007"
+    },
+    {
+      "user_name": "ccsuite",
+      "user_id": "60008",
+      "group_name": "ccsuite",
+      "group_id": "60008"
+    },
+    {
+      "user_name": "hacluster",
+      "user_id": "60009",
+      "group_name": "hacluster",
+      "group_id": "60009"
+    },
+    {
+      "user_name": "ccp_master",
+      "user_id": "60011",
+      "group_name": "ccs_master",
+      "group_id": "60001"
+    },
+    {
+      "user_name": "ccp_sysadmin",
+      "user_id": "60012",
+      "group_name": "ccp_sysadmin",
+      "group_id": "60012"
+    },
+    {
+      "user_name": "ccp_secadmin",
+      "user_id": "60013",
+      "group_name": "ccp_secadmin",
+      "group_id": "60013"
+    },
+    {
+      "user_name": "ccp_audadmin",
+      "user_id": "60014",
+      "group_name": "ccp_audadmin",
+      "group_id": "60014"
+    },
+    {
+      "user_name": "hmpi_master",
+      "user_id": "60015",
+      "group_name": "hmpi_master",
+      "group_id": "60015"
+    },
+    {
+      "user_name": "hmpi_user",
+      "user_id": "60016",
+      "group_name": "hmpi_user",
+      "group_id": "60016"
+    }
+  ]
+}
