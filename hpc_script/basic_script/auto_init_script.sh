@@ -1,6 +1,3 @@
-#
-# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
-#
 #!/usr/bin/env bash
 # 基础项安装配置系统初始化脚本，主要用来初始化一键安装脚本准备工作
 # 当前脚本不依赖配置文件以及其他外部shell脚本

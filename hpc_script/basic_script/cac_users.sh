@@ -1,7 +1,3 @@
-#
-# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
-#
-
 #!/usr/bin/env bash
 # 批量创建业务用户自动化脚本
 

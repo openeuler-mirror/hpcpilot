@@ -1,7 +1,3 @@
-#
-# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
-#
-
 #!/usr/bin/env bash
 # Selinux的主要作用就是最大限度地减小系统中服务进程可访问的资源
 # 关闭selinux安全子系统内核模块自动化脚本

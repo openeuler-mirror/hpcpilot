@@ -1,7 +1,3 @@
-#
-# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
-#
-
 #!/usr/bin/env bash
 # 批量配置网络（IB/RoCE）,网卡IB模式切换为RoCE模式自动化脚本
 

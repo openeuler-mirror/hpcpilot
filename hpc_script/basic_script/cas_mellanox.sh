@@ -1,7 +1,3 @@
-#
-# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
-#
-
 #!/usr/bin/env bash
 # 安装Mellanox网卡驱动自动化脚本
 

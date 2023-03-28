@@ -1,7 +1,3 @@
-#
-# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
-#
-
 #!/usr/bin/env bash
 # HPC自动化脚本安装公共方法脚本
 # set -x
