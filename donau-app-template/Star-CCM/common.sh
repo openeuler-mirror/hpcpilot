@@ -5,10 +5,10 @@
 # Application running command.
 if [[ "${VNC_DISPLAY_FLAG}" = "Yes" ]];then
     FDISPLAY=""
-	SYS_ENV="DISPLAY=${VNC_DISPLAY_FLAG}"
+	SYS_ENV="DISPLAY=${VNC_DISPLAY}"
 else
     FDISPLAY="-batch"
 fi
 
 NP=${CPU_CORES}
-APP_CMD="/share/software/script/app/sub_star_ccm.sh ${NP} ${CASE_FILE} ${FDISPLAY}"
+APP_CMD="/share/software/script/app/sub_starccm.sh ${NP} ${CASE_FILE} ${FDISPLAY}"

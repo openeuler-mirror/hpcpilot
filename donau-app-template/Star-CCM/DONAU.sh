@@ -5,7 +5,7 @@
 # Scheduler parameter combination result.
 SCHEDULER_PARAMS=""
 
-SCHEDULER_PARAMS="${SCHEDULER_PARAMS} -N {CPU_CORES} -tnp112"
+SCHEDULER_PARAMS="${SCHEDULER_PARAMS} -N ${CPU_CORES}"
 
 
 if [ "x${ACCOUNT_NAME}" != "x" ]; then
