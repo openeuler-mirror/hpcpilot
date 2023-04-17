@@ -1,21 +1,5 @@
 #!/bin/bash
 
-#======================以下内容无需修改======================
-export HOSTFILE=/tmp/hostfile.$$
-rm -rf $HOSTFILE
-touch $HOSTFILE
-
-cat ${CCS_ALLOC_FILE}
-ntask=`cat ${CCS_ALLOC_FILE} | awk -v fff="$HOSTFILE" '{}
-{
-	split($0, a, " ")
-	if (length(a[1]) > 0 && length(a[3]) > 0) {
-		print a[1]":"a[2] >> fff
-		total_task+=a[3]
-    }
-}END{print total_task}'`
-#======================以上内容无需修改======================
-
 #########处理输入参数#########
 if [ $# != 3 ]; then
 	echo "Usage: Parameter mismatch."
@@ -28,7 +12,7 @@ fi
 ln ${DATA_FILE} .
 jobname=`basename ${DATA_FILE}`
 
-HOSTLIST=`cat ${HOSTFILE} |tr '\n' ','|sed 's/.$//'`
+HOSTLIST=`cat ${CCS_ALLOC_FILE} |awk '{print $1,$2}'|tr '\n' ','|sed 's/ /:/g'`
 HOSTLIST=${HOSTLIST%,:,}
 ###此处加载应用license环境变量，按照实际路径修改
 export CDLMD_LICENSE_FILE='/share/software/apps/start-ccm+/path/license.dat'
@@ -48,5 +32,4 @@ echo $RUN_CMD
 eval $RUN_CMD
 ret=$?
 
-rm -rf $HOSTFILE
 exit $ret
