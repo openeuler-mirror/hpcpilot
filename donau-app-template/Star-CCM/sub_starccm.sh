@@ -12,7 +12,6 @@ fi
 
 if [[ "${VNC_DISPLAY_FLAG}" = "Yes" ]];then
     FDISPLAY=""
-	SYS_ENV="DISPLAY=${VNC_DISPLAY}"
 else
     FDISPLAY="-batch"
 fi

@@ -13,7 +13,6 @@ fi
 
 if [[ "${VNC_DISPLAY_FLAG}" = "Yes" ]];then
     FDISPLAY="gui"
-	SYS_ENV="DISPLAY=${VNC_DISPLAY}"
 else
     FDISPLAY="nogui"
 fi
