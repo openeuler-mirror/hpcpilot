@@ -3,12 +3,6 @@
 # Common functions for template.
 
 # Application running command.
-if [[ "${VNC_DISPLAY_FLAG}" = "Yes" ]];then
-    FDISPLAY="gui"
-	SYS_ENV="DISPLAY=${VNC_DISPLAY}"
-else
-    FDISPLAY="nogui"
-fi
 
-NP=${CPU_CORES}
-APP_CMD="/share/software/scripts/app/cfx.sh ${FDISPLAY} ${CPU_CORES} ${DEF_FILE} ${RES_FILE}"
+SCRIPT_PATH="/share/software/scripts/app/cfx.sh"
+APP_CMD="${SCRIPT_PATH} ${VNC_DISPLAY_FLAG} ${CPU_CORES} ${DEF_FILE} ${RES_FILE}"
