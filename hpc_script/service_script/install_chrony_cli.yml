@@ -1,0 +1,17 @@
+- name: install chrony cli
+  hosts: ntp_client
+  gather_facts: False
+  tasks:
+  - name: stop ntp
+    shell: systemctl stop ntpd.service && systemctl disable ntpd.service
+    ignore_errors: yes
+  - name: install chrony 
+    shell: yum -y install chrony
+  - name: config chrony.conf
+    blockinfile:
+     dest: /etc/chrony.conf
+     marker: "#{mark}config"
+     block: |
+      server {{ ntp_server_ip }} iburst
+  - name: restart chrony
+    shell: systemctl restart chronyd.service && systemctl enable chronyd.service

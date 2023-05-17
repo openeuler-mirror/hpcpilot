@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-
+######################################################################
+# 脚本描述：安装配置NTP客户端端自动化脚本                                    #
+# 注意事项：无                                                          #
+######################################################################
 
 # 引用公共函数文件开始
-# root_dir=$(echo "$(pwd)" | awk '{split($1,arr,"/");print arr[2]}')
-source /${1}/software/tools/hpc_script/common.sh ${1}
+if [ "${1}" == "opt" ]; then
+    # 定义脚本文件、配置文件存放目录
+    base_directory=/${1}/hpcpilot/hpc_script
+else
+    # 定义脚本文件、配置文件存放目录
+    base_directory=/${1}/software/tools/hpc_script
+fi
+source ${base_directory}/common.sh ${1}
 # 引用公共函数文件结束
 
-
-# playbook脚本目录
-playbook_dir=$(get_ini_value basic_conf basic_shared_directory /share)/software/tools/hpc_script/service_script
-#ntp服务端IP
+#NTP服务端IP地址
 ntp_server_ip=$(get_ini_value service_conf ntp_server_ip)
 
-
-ansible-playbook -e "ntp_server_ip=$ntp_server_ip"  $playbook_dir/install_ntp_client.yml
+ansible-playbook -e "ntp_server_ip=${ntp_server_ip}"  ${base_directory}/service_script/install_ntp_client.yml

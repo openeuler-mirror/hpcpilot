@@ -2,7 +2,7 @@
 
 # 引用公共函数文件开始
 root_dir=$(echo "$(pwd)" | awk '{split($1,arr,"/");print arr[2]}')
-source /${root_dir}/software/tools/hpc_script/common.sh
+source /${root_dir}/software/tools/hpc_script/common.sh ${root_dir}
 # 引用公共函数文件结束
 
 # 设置公共路径
@@ -30,7 +30,7 @@ cd $stream_install_path
 clang -fopenmp -O3 -DSTREAM_ARRAY_SIZE=800000000 -DNTIMES=20 -mcmodel=large stream.c -o stream_c.exe
 filepath=$stream_install_path/stream_c.exe
 if [ -f $filepath ];then
-	log_info "\033[32m*********stream successfully compiled!**********\033[0m" true
+	log_info "*********stream successfully compiled!**********" true
 else
-	log_error "\033[31m*********stream compiler error**********\033[0m" true
+	log_error "*********stream compiler error**********" true
 fi

@@ -2,7 +2,7 @@
 	
 # 引用公共函数文件开始
 root_dir=$(echo "$(pwd)" | awk '{split($1,arr,"/");print arr[2]}')
-source /${root_dir}/software/tools/hpc_script/common.sh
+source /${root_dir}/software/tools/hpc_script/common.sh ${root_dir}
 # 引用公共函数文件结束
 
 # 设置公共路径
@@ -23,7 +23,7 @@ mkdir -p $PWD/compilers/bisheng/$bisheng_v $PWD/mpi/hmpi/$hmpi_v/bisheng$bisheng
 #modulefile文件存放目录
 mkdir -p $PWD/modules/compilers/bisheng/$bisheng_v $PWD/modules/mpi/hmpi/$hmpi_v $PWD/modules/libs/kml/$kml_v
 #安装module
-yum install environment-modules -y
+yum install environment-modules -y -q
 #加载module环境变量
 source /etc/profile.d/modules.sh
 #生成毕昇的modulefile
@@ -73,47 +73,47 @@ EOF
 
 ###解压毕昇，hmpi，kml的压缩包
 #毕昇
-echo -e "\033[33m*********开始解压**********\033[0m"
-tar --no-same-owner -xzvf $bisheng_path --strip 1 -C $PWD/compilers/bisheng/$bisheng_v
-rpm -ivh $PWD/sourcecode/libatomic*.rpm
+log_info "*********开始解压，请稍等...**********" true
+tar --no-same-owner -xzf $bisheng_path --strip 1 -C $PWD/compilers/bisheng/$bisheng_v
+rpm -i $PWD/sourcecode/libatomic*.rpm
 cd $PWD/compilers/bisheng/$bisheng_v
 find . -type f -perm 440 -exec chmod 444 {} \;
 find . -type f -perm 550 -exec chmod 555 {} \;
 #hmpi
 cd $public_path
-tar --no-same-owner -xzvf $hmpi_path -C $PWD/mpi/hmpi/$hmpi_v/bisheng$bisheng_v
+tar --no-same-owner -xzf $hmpi_path -C $PWD/mpi/hmpi/$hmpi_v/bisheng$bisheng_v
 #kml
 cd $PWD/sourcecode
-unzip BoostKit-kml_*.zip
-rpm --force -ivh boostkit-kml*.rpm --nodeps
+unzip -q BoostKit-kml_*.zip
+rpm --force -i boostkit-kml*.rpm --nodeps
 rm -rf boostkit-kml*.rpm "Kunpeng BoostKit License Agreement 1.0.txt" "鲲鹏应用使能套件BoostKit许可协议 1.0.txt"
-echo -e "\033[33m*********解压完成**********\033[0m"
+log_info "*********解压完成**********" true
 
 ###加载毕昇环境变量
 cd $public_path
 module use $PWD/modules
 module load compilers/bisheng/$bisheng_v/bisheng$bisheng_v
 #查看毕昇版本
-echo -e "\e[33mclang -v \e[0m"
+log_info "clang -v"
 clang -v
 if [ $? -ne 0 ]; then
-	log_error "\e[31mbisheng compiler error \e[0m" true
+	log_error "bisheng compiler error" true
 else
-	log_info "\e[32mbisheng successfully compiled! \e" true
+	log_info "bisheng successfully compiled!" true
 fi	
 
 ###编译HMPI
 #安装编译hmpi过程中所依赖的包
-yum -y install autoconf automake libtool glibc-devel.aarch64 gcc gcc-c++.aarch64 flex numactl binutils systemd-devel valgrind perl-Data-Dumper
+yum -y install -q autoconf automake libtool glibc-devel.aarch64 gcc gcc-c++.aarch64 flex numactl binutils systemd-devel valgrind perl-Data-Dumper
 #执行hmpi编译脚本
 hmpi_install_path=$PWD/mpi/hmpi/$hmpi_v/bisheng$bisheng_v
 HMPI_path=`echo $PWD/mpi/hmpi/$hmpi_v/bisheng$bisheng_v/Hyper-MPI*`
 cd $HMPI_path
 sh hmpi-autobuild.sh -c clang -t release -m hmpi.tar.gz -u hucx.tar.gz -g xucg.tar.gz -p $hmpi_install_path
 if [ $? -ne 0 ]; then
-    log_error "\e[31mhmpi compiler error \e[0m" true
+    log_error "hmpi compiler error" true
 else
-    log_info "\e[32mhmpi successfully compiled! \e[0m" true
+    log_info "hmpi successfully compiled!" true
 fi
 rm -rf $HMPI_path
 #加载hmpi环境变量
@@ -121,12 +121,12 @@ cd $public_path
 module use $PWD/modules
 module load mpi/hmpi/$hmpi_v/bisheng$bisheng_v
 #查看mpicc路径是否正确
-echo -e "\e[33mwhich mpirun \e[0m"
+log_info "which mpirun" true
 which mpirun
 if [ $? -ne 0 ]; then
-    log_error "\e[31mhmpi path loading error \e[0m" true
+    log_error "hmpi path loading error" true
 else
-    log_info "\e[32mhmpi path loading correct! \e[0m" true
+    log_info "hmpi path loading correct!" true
 fi
 ###将kml安装生成的目录移至目标路径
 mv /usr/local/kml/* $PWD/libs/kml/$kml_v

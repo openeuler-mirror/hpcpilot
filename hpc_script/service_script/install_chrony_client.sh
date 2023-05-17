@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ######################################################################
-# 脚本描述：安装配置LDAP客户端自动化脚本                                     #
+# 脚本描述：安装配置Chrony客户端自动化脚本                                   #
 # 注意事项：无                                                          #
 ######################################################################
 
@@ -16,7 +16,7 @@ fi
 source ${base_directory}/common.sh ${1}
 # 引用公共函数文件结束
 
-# openldap服务端IP（HA场景为虚拟IP）
-ldap_server_ip=$(get_ini_value service_conf virtual_ldap_server_ip $(get_ini_value service_conf master_ldap_server_ip))
+#ntp服务端IP
+ntp_server_ip=$(get_ini_value service_conf ntp_server_ip)
 
-ansible-playbook -e "ldap_server_ip=${ldap_server_ip}" ${base_directory}/service_script/install_ldap_cli_TLS.yml
+ansible-playbook -e "ntp_server_ip=${ntp_server_ip}" ${base_directory}/service_script/install_chrony_cli.yml
