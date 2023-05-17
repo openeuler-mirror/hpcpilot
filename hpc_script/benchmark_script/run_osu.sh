@@ -3,7 +3,7 @@
 #### 检查运行目录
 local_path=$PWD
 if [ ! -f "$local_path/$(basename $0)" ];then
-    echo "You should run the script in the [SHARE_DIR/benchmark/run] directory."
+    echo -e "\033[49;31m you should run the script in the [SHARE_DIR/benchmark/run] directory.\033[0m"
     exit 1
 fi
 

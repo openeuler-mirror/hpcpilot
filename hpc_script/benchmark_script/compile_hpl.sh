@@ -2,20 +2,20 @@
 
 # 引用公共函数文件开始
 root_dir=$(echo "$(pwd)" | awk '{split($1,arr,"/");print arr[2]}')
-source /${root_dir}/software/tools/hpc_script/common.sh
+source /${root_dir}/software/tools/hpc_script/common.sh ${root_dir}
 # 引用公共函数文件结束
 
 # 设置公共路径
 public_path=$(get_ini_value basic_conf basic_shared_directory /share)/software
 
 #解压hpl源码包
-echo -e "\033[33m*********开始解压**********\033[0m"
+log_info "*********开始解压，请稍等...**********" true
 cd $public_path
 mkdir -p $PWD/tools/benchmark/exec_tools/hpl
 mkdir -p $PWD/tools/benchmark/run
 hpl_install_path=$PWD/tools/benchmark/exec_tools/hpl
-tar -xzvf $PWD/sourcecode/hpl*.tar.gz --strip 1 -C $hpl_install_path
-echo -e "\033[33m*********解压结束**********\033[0m"
+tar -xzf $PWD/sourcecode/hpl*.tar.gz --strip 1 -C $hpl_install_path
+log_info "*********解压结束**********" true
 
 #移动benchmark工具测试脚本至对应位置
 mv $PWD/tools/hpc_script/benchmark_script/run* $PWD/tools/benchmark/run
@@ -53,13 +53,16 @@ sed -i 's/CC           =.*/CC           = clang/' $hpl_path
 sed -i 's/CCFLAGS      =.*/CCFLAGS      = $(HPL_DEFS) -fomit-frame-pointer -Ofast -ffast-math -ftree-vectorize -mcpu=tsv110  -funroll-loops -W -Wall -fopenmp/' $hpl_path
 sed -i 's/LINKER       =.*/LINKER       = flang/' $hpl_path
 
+#创建hpl保存编译过程日志目录
+touch $hpl_install_path/hpl_compile.log
+
 #编译hpl
 cd $hpl_install_path
-echo -e "\033[33m*********开始编译**********\033[0m"
-make arch=kunpeng
+log_info "*********开始编译**********" true
+make arch=kunpeng >> $hpl_install_path/hpl_compile.log
 filepath=$PWD/bin/kunpeng/xhpl
 if [ -f $filepath ];then
-	log_info "\033[32m*********hpl successfully compiled!**********\033[0m" true
+	log_info "*********hpl successfully compiled!**********" true
 else
-	log_error "\033[31m*********hpl compiler error**********\033[0m" true
+	log_error "*********hpl compiler error**********" true
 fi
