@@ -17,7 +17,7 @@ HOSTLIST=${HOSTLIST%:::}
 ANSYS_PATH="/home/wangyq/app/ansys_inc/v201/ansys/bin/ansys201"
 
 #####组装mpi命令#####
-RUN_CMD="/usr/bin/exagear -- ${ANSYS_PATH} -b -dis -machines $HOSTLIST -np $NP -i ${INPUT_FILE}"
+RUN_CMD="${ANSYS_PATH} -b -dis -machines $HOSTLIST -np $NP -i ${INPUT_FILE}"
 
 echo $RUN_CMD
 $RUN_CMD
