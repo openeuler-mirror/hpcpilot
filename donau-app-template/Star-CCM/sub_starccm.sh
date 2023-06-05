@@ -31,10 +31,12 @@ unset SECURITY_NAME
 ###应用命令所在目录按照实际路径修改
 STARCCM_PATH="/share/software/apps/star-ccm+/path/15.02.007-R8/STAR-CCM+15.02.007-R8/star/bin/starccm+"
 
-if [ $NP -gt 112 ] ; then
-    RUN_CMD="/usr/bin/exagear -- ${STARCCM_PATH} $FDISPLAY -np $NP -rsh ssh -on $HOSTLIST -mpi openmpi4 -mpiflags '-mca pml ucx -mca btl ^vader,tcp,ofi,openib,uct --bind-to core' ${jobname}"
+NODE_NUM=`cat ${CCS_ALLOC_FILE} |wc -l`
+
+if [ $NODE_NUM -gt 1 ] ; then
+    RUN_CMD="${STARCCM_PATH} $FDISPLAY -np $NP -rsh ssh -on $HOSTLIST -mpi openmpi4 -mpiflags '-mca pml ucx -mca btl ^vader,tcp,ofi,openib,uct --bind-to core' ${jobname}"
 else
-	RUN_CMD="/usr/bin/exagear -- ${STARCCM_PATH} $FDISPLAY -np $NP -rsh ssh -on $HOSTLIST -mpi openmpi4 -mpiflags '--bind-to core' ${jobname}"
+	RUN_CMD="${STARCCM_PATH} $FDISPLAY -np $NP -rsh ssh -on $HOSTLIST ${jobname}"
 fi
 
 echo $RUN_CMD

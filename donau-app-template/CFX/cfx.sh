@@ -27,9 +27,9 @@ CFX_PATH="/share/software/apps/Ansys20230228/ansys_inc/v201/CFX/bin/cfx5solve"
 
 if [ "x${RES_FILE}" != "x" ]; then
 ln ${RES_FILE} .
-    RUN_CMD="/usr/bin/exagear -- ${CFX_PATH} -def ${DEF_FILE} -INI-FILE ${RES_FILE} -par -par-dist $HOSTLIST -start-method  'Open MPI Distributed Parallel' -partition $NP"
+    RUN_CMD="${CFX_PATH} -def ${DEF_FILE} -INI-FILE ${RES_FILE} -par -par-dist $HOSTLIST -start-method  'Open MPI Distributed Parallel' -partition $NP"
 else
-	RUN_CMD="/usr/bin/exagear -- ${CFX_PATH} -def ${DEF_FILE} -par -par-dist $HOSTLIST -start-method  'Open MPI Distributed Parallel' -partition $NP"
+	RUN_CMD="${CFX_PATH} -def ${DEF_FILE} -par -par-dist $HOSTLIST -start-method  'Open MPI Distributed Parallel' -partition $NP"
 fi
 
 echo $RUN_CMD

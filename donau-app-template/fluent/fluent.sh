@@ -40,7 +40,7 @@ env
 
 FLUENT_PATH="/home/wangyq/app/ansys_inc/v201/fluent/bin/fluent"
 
-RUN_CMD="/usr/bin/exagear -- ${FLUENT_PATH} ${FLUENT_DIMENSION} ${batch} -t${NP} -cnf=$HOSTFILE -mpi=intel -pib -i fluent_script.jou -affinity=off"
+RUN_CMD="${FLUENT_PATH} ${FLUENT_DIMENSION} ${batch} -t${NP} -cnf=$HOSTFILE -mpi=intel -pib -i fluent_script.jou -affinity=off"
 
 echo $RUN_CMD
 eval $RUN_CMD
