@@ -73,6 +73,5 @@ function main() {
     view_log_path
 }
 
+# 主函数程序入口
 main
-
-exit_and_cleanENV 0

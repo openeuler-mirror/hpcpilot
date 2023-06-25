@@ -40,6 +40,8 @@ ansible_log_path=${operation_log_path}/ansible
 hostname_file=${base_directory}/hostname.csv
 # 配置文件setting.ini所在的目录
 ini_file=${base_directory}/setting.ini
+# 集成自动执行标识（默认true）
+auto_run_flag=true
 
 # 去掉首尾空格
 # 调用方式：函数名
@@ -76,6 +78,29 @@ function get_ini_value() {
     else
         echo ${int_value}
     fi
+}
+
+# 测试连接ansible，3次重试ssh密码机会，超过则自动退出，
+# 调用方式：函数名
+# 调用举例：`test_ansible`
+function test_ansible() {
+    local count=0
+    while [ $count -lt 3 ]
+    do
+      if [ -z "$(ansible ${ansible_group_name}":!"${om_machine_ip} -m ping | grep UNREACHABLE)" ]; then
+        return
+      elif [ -z "$(ansible ${ansible_group_name}":!"${om_machine_ip} -k -m ping | grep UNREACHABLE)" ]; then
+        return
+      else
+        count=$((count+1))
+        log_tips "Incorrect password. Please try again.[${count}/3]" true
+      fi
+      if [ $count -eq 3 ]; then
+        log_tips "The password has been incorrect for more than three times. The system automatically logs out." true
+        exit_and_cleanENV 0
+      fi
+    done
+
 }
 
 # 更新配置文件指定section指定key的vaLue
@@ -242,10 +267,10 @@ function log_tips() {
 function view_log_path() {
     echo -e ""
     echo -e "\033[33m##########################################################################\033[0m"
-    echo -e "\033[33m##\033[0m                                                                      \033[33m##\033[0m"
-    echo -e "\033[33m##\033[0m\033[32m  运行日志：${operation_log_path}/access_all.log                          \033[33m##\033[0m"
-    echo -e "\033[33m##\033[0m\033[32m  错误日志：${operation_log_path}/access_error.log                        \033[33m##\033[0m"
-    echo -e "\033[33m##\033[0m                                                                      \033[33m##\033[0m"
+    echo -e "\033[33m##\033[0m"
+    echo -e "\033[33m##\033[0m\033[32m  运行日志：${operation_log_path}/access_all.log"
+    echo -e "\033[33m##\033[0m\033[32m  错误日志：${operation_log_path}/access_error.log"
+    echo -e "\033[33m##\033[0m"
     echo -e "\033[33m##########################################################################\033[0m"
     echo -e ""
 }
@@ -316,7 +341,7 @@ function get_current_host_ip() {
     if [ "$(rpm -qa net-tools)" == "" ]; then
         yum install -y net-tools >> ${operation_log_path}/access_all.log 2>&1
     fi
-    echo "$(ifconfig -a | grep inet | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | tr -d "addrs")"
+    echo "$(ifconfig -a 2> /dev/null | grep inet | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | tr -d "addrs")"
 }
 
 # 获取当前主机的主机名称hostname
@@ -434,7 +459,7 @@ function manual_script_action() {
         # 执行脚本合法性检查方法
         ${3}
         if [ "$?" == "1" ]; then
-            exit_and_cleanENV 1
+            return 1
         fi
     fi
     # 是否开启DEBUG
@@ -771,20 +796,48 @@ function create_local_sshkey() {
     log_info "Sshkey of the local O&M node is generated." false
 }
 
+# 通过配置文件setting.ini判断ldap服务是否是HA环境
+# 调用方式：函数名
+# 返回值：0=表示非HA，1=表示HA
+# 调用举例：`ldap_is_HA`
+function ldap_is_HA() {
+    local ldap_slave_ip=$(get_ini_value service_conf slave_ldap_server_ip)
+    local ldap_virtual_ip=$(get_ini_value service_conf virtual_ldap_server_ip)
+    if [ -n "$(all_trim ${ldap_slave_ip})" ] && [ -n "$(all_trim ${ldap_virtual_ip})" ]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
 # 读取hostname.csv文件并生成/etc/hosts文件
 # 调用方式：函数名
 # 返回值：无
 # 调用举例：`create_etc_hosts`
 function create_etc_hosts() {
     if [ "$(is_file_exist ${hostname_file})" == "0" ]; then
+        local is_ha=0
         local hosts_content="127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4\n::1         localhost localhost.localdomain localhost6 localhost6.localdomain6\n"
+        local ldap_domain=$(get_ini_value service_conf ldap_domain_name ldap01.huawei.com)
+        local ldap_master_ip=$(get_ini_value service_conf master_ldap_server_ip)
+        ldap_is_HA
+        if [ "${?}" == "1" ]; then
+            local ldap_virtual_ip=$(get_ini_value service_conf virtual_ldap_server_ip)
+            # HA环境直接将虚拟IP和域名映射
+            hosts_content="${hosts_content}${ldap_virtual_ip} ${ldap_domain}\n"
+            is_ha=1
+        fi
         # tail -n +2 从第二行开始读取数据，第一行为标题行
         for line in $(cat ${hostname_file} | tail -n +2); do
             # 检查判断字符串长度是否为0
             if [ -n "${line}" ]; then
                 local file_host_ip=$(echo ${line} | awk -F "," '{print $1}')
                 local file_host_name=$(echo ${line} | awk -F "," '{print $2}')
-                hosts_content="${hosts_content}${file_host_ip} ${file_host_name}\n"
+                if [ "${is_ha}" == "0" ] && [ "${file_host_ip}" == "${ldap_master_ip}" ]; then
+                    hosts_content="${hosts_content}${file_host_ip} ${file_host_name} ${ldap_domain}\n"
+                else
+                    hosts_content="${hosts_content}${file_host_ip} ${file_host_name}\n"
+                fi
             fi
         done
         # 覆盖写入/etc/hosts文件
@@ -825,64 +878,91 @@ function create_ansible_hosts() {
                         expansion_ip="${expansion_ip}\n${file_host_ip}"
                     fi
                 fi
-                local group_name="$(echo ${line} | awk -F "," '{print $3}')"
-                if [ -n "${group_name}" ]; then
-                    if [[ "${group_name}" =~ "ccsccp" ]]; then
-                        if [ -z "${ccsccp}" ]; then
-                            ccsccp="${file_host_ip}"
-                        else
-                            ccsccp="${ccsccp}\n${file_host_ip}"
+                local group_names="$(echo ${line} | awk -F "," '{print $3}')"
+                if [ -n "${group_names}" ]; then
+                    local arr_group=(${group_names//&/ })
+                    for group_name in "${arr_group[@]}"; do
+                        if [ -n "$(echo ${group_name} | grep -i -w 'ccsccp')" ]; then
+                            if [ -z "${ccsccp}" ]; then
+                                ccsccp="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${ccsccp}" | grep "${file_host_ip}")" ]; then
+                                    ccsccp="${ccsccp}\n${file_host_ip}"
+                                fi
+                            fi
                         fi
-                    fi
-                    if [[ "${group_name}" =~ "agent" ]]; then
-                        if [ -z "${agent_ip}" ]; then
-                            agent_ip="${file_host_ip}"
-                        else
-                            agent_ip="${agent_ip}\n${file_host_ip}"
+                        if [ -n "$(echo ${group_name} | grep -i -w 'agent')" ]; then
+                            if [ -z "${agent_ip}" ]; then
+                                agent_ip="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${agent_ip}" | grep "${file_host_ip}")" ]; then
+                                    agent_ip="${agent_ip}\n${file_host_ip}"
+                                fi
+                            fi
                         fi
-                    fi
-                    if [[ "${group_name}" =~ "scheduler" ]]; then
-                        if [ -z "${scheduler_ip}" ]; then
-                            scheduler_ip="${file_host_ip}"
-                        else
-                            scheduler_ip="${scheduler_ip}\n${file_host_ip}"
+                        if [ -n "$(echo ${group_name} | grep -i -w 'scheduler')" ]; then
+                            if [ -z "${scheduler_ip}" ]; then
+                                scheduler_ip="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${scheduler_ip}" | grep "${file_host_ip}")" ]; then
+                                    scheduler_ip="${scheduler_ip}\n${file_host_ip}"
+                                fi
+                            fi
                         fi
-                    fi
-                    if [[ "${group_name}" =~ "portal" ]]; then
-                        if [ -z "${portal_ip}" ]; then
-                            portal_ip="${file_host_ip}"
-                        else
-                            portal_ip="${portal_ip}\n${file_host_ip}"
+                        if [ -n "$(echo ${group_name} | grep -i -w 'portal')" ]; then
+                            if [ -z "${portal_ip}" ]; then
+                                portal_ip="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${portal_ip}" | grep "${file_host_ip}")" ]; then
+                                    portal_ip="${portal_ip}\n${file_host_ip}"
+                                fi
+                            fi
                         fi
-                    fi
-                    if [[ "${group_name}" =~ "cli" ]]; then
-                        if [ -z "${cli_ip}" ]; then
-                            cli_ip="${file_host_ip}"
-                        else
-                            cli_ip="${cli_ip}\n${file_host_ip}"
+                        if [ -n "$(echo ${group_name} | grep -i -w 'cli')" ]; then
+                            if [ -z "${cli_ip}" ]; then
+                                cli_ip="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${cli_ip}" | grep "${file_host_ip}")" ]; then
+                                    cli_ip="${cli_ip}\n${file_host_ip}"
+                                fi
+                            fi
                         fi
-                    fi
-                    if [[ "${group_name}" =~ "ntp_server" ]]; then
-                        if [ -z "${ntp_server_ip}" ]; then
-                            ntp_server_ip="${file_host_ip}"
-                        else
-                            ntp_server_ip="${ntp_server_ip}\n${file_host_ip}"
+                        if [ -n "$(echo ${group_name} | grep -i -w 'ntp_server')" ]; then
+                            if [ -z "${ntp_server_ip}" ]; then
+                                ntp_server_ip="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${ntp_server_ip}" | grep "${file_host_ip}")" ]; then
+                                    ntp_server_ip="${ntp_server_ip}\n${file_host_ip}"
+                                fi
+                            fi
                         fi
-                    fi
-                    if [[ "${group_name}" =~ "ntp_client" ]]; then
-                        if [ -z "${ntp_client_ip}" ]; then
-                            ntp_client_ip="${file_host_ip}"
-                        else
-                            ntp_client_ip="${ntp_client_ip}\n${file_host_ip}"
+                        if [ -n "$(echo ${group_name} | grep -i -w 'ntp_client')" ]; then
+                            if [ -z "${ntp_client_ip}" ]; then
+                                ntp_client_ip="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${ntp_client_ip}" | grep "${file_host_ip}")" ]; then
+                                    ntp_client_ip="${ntp_client_ip}\n${file_host_ip}"
+                                fi
+                            fi
+                        fi   
+                        if [ -n "$(echo ${group_name} | grep -i -w 'ldap_client')" ]; then
+                            if [ -z "${ldap_client_ip}" ]; then
+                                ldap_client_ip="${file_host_ip}"
+                            else
+                                # 检查是否配置了重复的分组名称
+                                if [ -z "$(echo -n "${ldap_client_ip}" | grep "${file_host_ip}")" ]; then
+                                    ldap_client_ip="${ldap_client_ip}\n${file_host_ip}"
+                                fi
+                            fi
                         fi
-                    fi   
-                    if [[ "${group_name}" =~ "ldap_client" ]]; then
-                        if [ -z "${ldap_client_ip}" ]; then
-                            ldap_client_ip="${file_host_ip}"
-                        else
-                            ldap_client_ip="${ldap_client_ip}\n${file_host_ip}"
-                        fi
-                    fi
+                    done
                 fi
             fi
         done
@@ -955,27 +1035,102 @@ function check_run_expansion() {
     echo ${is_expansion}
 }
 
-
 # 系统退出并清理密码
-# 调用方式：exit_and_cleanENV 退出编码
+# 调用方式：exit_and_cleanENV 退出编码 是否手动执行（true or false）
 # 返回值：无
-# 调用举例：`exit_and_cleanENV` 0
+# 调用举例：`exit_and_cleanENV` 0 true
 function exit_and_cleanENV() {
-    # 清理配置文件涉及到的密码
-    modify_ini_value common_global_conf common_sys_user_password ""
-    modify_ini_value common_global_conf common_sys_root_password ""
-    modify_ini_value service_conf ldap_login_password ""
-    # 清理ANSIBLE运行日志
-    if [ -d "${ansible_log_path}" ]; then
-        rm -rf ${ansible_log_path}/*  
+    if [ -z "${auto_run_flag}" ] || [ "${auto_run_flag}" == "false" ]; then
+        exit ${1}
     fi
-    # 清理删除hpcpilot.pid
-    if [ -f "/var/log/hpcpilot.pid" ]; then
-        rm -rf /var/log/hpcpilot.pid
+    if [ -z "${2}" ] || [ "${2}" == "true" ]; then
+        #清理配置文件涉及到的密码
+        modify_ini_value common_global_conf common_sys_user_password ""
+        modify_ini_value common_global_conf common_sys_root_password ""
+        modify_ini_value service_conf ldap_login_password ""
+        # 清理ANSIBLE运行日志
+        if [ -d "${ansible_log_path}" ]; then
+            rm -rf ${ansible_log_path}/*
+        fi
+        # 清理删除hpcpilot.pid
+        if [ -f "/var/log/hpcpilot.pid" ]; then
+            rm -rf /var/log/hpcpilot.pid
+        fi
+        log_warn "Password is cleared, config password when you run scripts again." true
     fi
-    log_warn "Password is cleared, config password when you run scripts again." true
     exit ${1}
 }
+
+function expect_ssh_command() {
+  local ip="$1"
+  local pw="$2"
+  local cmd="$3"
+  local show_info="$4"
+  local time_out="$5"
+
+  local expect_show="0"
+  [ "${show_info}" = "true" ] && expect_show="1"
+  [ -z "${time_out}" ] && time_out=120
+
+  expect <<EOF
+    log_user "${expect_show}"
+    set timeout "${time_out}"
+    spawn bash -c {ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o NumberOfPasswordPrompts=1 root@${ip} "${cmd}"}
+    expect {
+        "yes/no" { send "yes\n";exp_continue }
+        "password:" { send -- "${pw}\n" }
+        default { exit 1 }
+    }
+    expect eof
+    catch wait result;
+    exit [lindex \$result 3]
+EOF
+  local result=$?
+  return $result
+}
+
+function ssh_command() {
+  local ip="$1"
+  local cmd="$2"
+  local pw="$3"
+  local show_info="$4"
+  local time_out="$5"
+
+  local ssh_show="-q"
+  local blank_set="> /dev/null 2>&1"
+  if [ "${show_info}" = "true" ]; then
+    ssh_show=""
+    blank_set=""
+  fi
+  ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname"
+  if [ 0 = $? ]; then
+    ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 ${ssh_show} root@${ip} "${cmd}" "${blank_set}"
+  else
+    expect_ssh_command "${ip}" "${pw}" "${cmd}" "${show_info}" "${time_out}"
+  fi
+  local result=$?
+  return $result
+}
+
+# 针对异常非法中断处理
+#trap "handle_ctrlc" EXIT
+#function handle_ctrlc() {
+#    log_warn "Abnormal interruption [CTRL+C] exit." false
+#	# 清理配置文件涉及到的密码
+##    modify_ini_value common_global_conf common_sys_user_password ""
+##    modify_ini_value common_global_conf common_sys_root_password ""
+##    modify_ini_value service_conf ldap_login_password ""
+#    # 清理ANSIBLE运行日志
+#    if [ -d "${ansible_log_path}" ]; then
+#        rm -rf ${ansible_log_path}/*  
+#    fi
+#    # 清理删除hpcpilot.pid
+#    if [ -f "/var/log/hpcpilot.pid" ]; then
+#        rm -rf /var/log/hpcpilot.pid
+#    fi
+#    log_warn "Password is cleared, config password when you run scripts again." true
+#    exit 1
+#}
 
 # 检查并安装基础命令
 # 调用方式：basic_commands_install
@@ -1052,4 +1207,65 @@ function check_concurrent_execution() {
     fi
     echo $$ > ${pid_file}
     return 0
+}
+
+# 根据setting.ini配置的域名获取LDAP DC值
+# 调用方式：get_ldapdc_by_domain
+# 返回值：返回数组.示例:arr[0]=huawei,arr[0]=com
+# 调用举例：`get_ldapdc_by_domain`
+function get_ldapdc_by_domain() {
+    # 定义数组返回变量并赋默认值
+    local arr_dc=(huawei com)
+    local ldap_domain=$(get_ini_value service_conf ldap_domain_name ldap01.huawei.com)
+    if [ "${ldap_domain}" != "ldap01.huawei.com" ]; then
+        # 截取最后一个点后面的值
+        if [ -n "${ldap_domain##*.}" ]; then
+            arr_dc[1]=${ldap_domain##*.}
+        fi
+        local temp_dc0=${ldap_domain#*.}
+        if [ -n "${temp_dc0%.*}" ]; then
+            arr_dc[0]=${temp_dc0%.*}
+        fi
+    fi
+    echo ${arr_dc[*]}
+}
+
+# 根据Benchmark模块加载对应的环境变量
+# 调用方式：load_benchmark_env 模块名称数组
+# 调用参数：BiSheng HMPI KML
+# 返回值：无
+# 调用举例：`load_benchmark_env` "BiSheng HMPI KML"
+function load_benchmark_env() {
+    if [ -z "${1}" ]; then
+        log_error "Module parameters cannot be empty." true
+        return
+    fi
+    local public_path=$(get_ini_value basic_conf basic_shared_directory /share)/software
+    cd ${public_path}
+    if [ -z "$(rpm -qa environment-modules)" ]; then
+        yum install environment-modules -y -q
+    fi
+    source /etc/profile.d/modules.sh
+    module use $PWD/modules
+
+    local arr_module=(${1// / })
+    for module_name in "${arr_module[@]}"; do
+        if [ "${module_name}" == "BiSheng" ]; then
+            local bisheng_path=`echo $PWD/sourcecode/*compiler*`
+            local bisheng_v=`echo "$bisheng_path" | awk -F'/' '{print $5}' | awk -F'-' '{print $3}'`
+            module load compilers/bisheng/$bisheng_v/bisheng$bisheng_v
+        elif [ "${module_name}" == "HMPI" ]; then
+            local bisheng_path=`echo $PWD/sourcecode/*compiler*`
+            local bisheng_v=`echo "$bisheng_path" | awk -F'/' '{print $5}' | awk -F'-' '{print $3}'`
+            local hmpi_path=`echo $PWD/sourcecode/Hyper-MPI*`
+            local hmpi_v=`echo "$hmpi_path" | awk -F'/' '{print $5}' | awk -F'_' '{print $2}'`
+            module load mpi/hmpi/$hmpi_v/bisheng$bisheng_v
+        elif [ "${module_name}" == "KML" ]; then
+            local kml_path=`echo $PWD/sourcecode/BoostKit-kml*`
+            local kml_v=`echo "$kml_path" | awk -F'/' '{print $5}' | awk -F'_' '{print $2}'`
+            module load libs/kml/$kml_v/kml$kml_v
+        else
+            log_warn "Unknown module name [${module_name}]." true
+        fi
+    done
 }

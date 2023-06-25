@@ -48,6 +48,7 @@ function check_setup_ansible() {
                 ret_host_code="1"
             fi
             # 获取ansible版本号
+            cd /etc/ansible/
             ansible_version=$(ansible --version | awk '{print $2}'  | sed -n '1P')
             local ret_info=(${ret_install_code} ${ret_cfg_code} ${ret_host_code})
             echo ${ret_info[@]}  
@@ -66,6 +67,7 @@ function check_setup_ansible_result() {
     if [ -n "$(echo "${current_ip_addr}" | grep "${om_machine_ip}")" ]; then
         # 运维节点检查结果显示
         if [ "${return_msg[0]}" == "0" ]; then
+            cd /etc/ansible/
             echo -e "\033[33m==\033[0m\033[32m  ANSIBLE安装检查结果正常                              [ √ ]\033[0m          \033[33m==\033[0m"
             echo -e "\033[33m==\033[0m\033[32m  ANSIBLE软件当前版本为：$(ansible --version | awk '{print $2}'  | sed -n '1P')\033[0m                                        \033[33m==\033[0m"
             if [ "${return_msg[1]}" == "0" ]; then
@@ -127,7 +129,8 @@ function setup_and_config_ansible() {
                 if [ "$(find_ansible_file)" != "" ]; then
                     # 目前本地安装支持 1.麒麟V10_ARM64版本、2.CENTOS7.6_ARM64版本 2.CENTOS8.2_ARM64版本
                     yum localinstall -y *.rpm >> ${operation_log_path}/access_all.log 2>&1
-                    if [ -n "$(cat /etc/system-release) | grep 'CentOS Linux release 8.2.2004 (Core)'" ]; then
+                    if [ -n "$(cat /etc/system-release | grep "CentOS Linux release 8.2.2004")" ]; then
+                        cd /etc/ansible/
                         ansible-config init --disabled -t all > ansible.cfg
                     fi
                 else
@@ -138,6 +141,7 @@ function setup_and_config_ansible() {
                 yum install -y ansible >> ${operation_log_path}/access_all.log 2>&1
             fi
             # 检查安装是否成功
+            cd /etc/ansible/
             if [ "$(ansible --version)" != "" ]; then
                 ansible_version=$(ansible --version | awk '{print $2}'  | sed -n '1P')
                 log_info "Ansible service installation succeeded." true
@@ -145,6 +149,11 @@ function setup_and_config_ansible() {
             # 找到host_key_checking = False取消注释。该步骤为取消主机间初次ssh跳转的人机交互。
             remove_match_line_symbol /etc/ansible/ansible.cfg host_key_checking
         fi
+        # remove_match_line_symbol /etc/ansible/ansible.cfg forks
+        remove_match_line_symbol /etc/ansible/ansible.cfg forks
+        # 读取并设置ansible并发数
+        local forks_num=$(get_ini_value basic_conf basic_ansible_forks 5)
+        sed -i "s/forks.*/forks           = $forks_num/" /etc/ansible/ansible.cfg
     fi
 }
 

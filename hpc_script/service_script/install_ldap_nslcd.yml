@@ -1,9 +1,9 @@
 - name: install ldap cli
-  hosts: all
+  hosts: ldap_client
   gather_facts: False
   vars:
-    serverIP: <serverIP>
-    passwd: <passwd>
+    ldap_server_ip: <ldap_server_ip>
+    ldap_login_password: <ldap_login_password>
   tasks:
   - name: install services
     shell: yum -y install nss-pam-ldapd pam_ldap openldap-clients oddjob oddjob-mkhomedir
@@ -23,10 +23,10 @@
       TLS_REQCERT allow
       TLS_CACERTDIR /etc/openldap/cacerts
       TLS_CACERT /etc/openldap/cacerts/ldap.crt
-      URI ldaps://{{ serverIP }}
+      URI ldaps://{{ ldap_server_ip }}
       SSL yes
   - name: chown nslcd.conf
-    shell: chown root: /etc/nslcd.conf && chmod 600 /etc/nslcd.conf
+    shell: "chown root: /etc/nslcd.conf && chmod 600 /etc/nslcd.conf"
   - name: config nslcd.conf uri
     replace:
      path: /etc/nslcd.conf
@@ -44,14 +44,14 @@
      dest: /etc/nslcd.conf
      marker: "#{mark}config"
      block: |
-      uri ldaps://{{ serverIP }}:636/
-      base dc=huawei,dc=com
+      uri ldaps://{{ ldap_server_ip }}:636/
+      base {{ ldap_base_dc }}
       ssl yes
       tls_reqcert allow
       tls_cacertdir /etc/openldap/cacerts
       tls_cacert /etc/openldap/cacerts/ldap.crt
-      binddn cn=root,dc=huawei,dc=com
-      bindpw {{ passwd }}
+      binddn cn=root,{{ ldap_base_dc }}
+      bindpw {{ ldap_login_password }}
   - name: config nsswitch.conf passwd
     replace:
      path: /etc/nsswitch.conf

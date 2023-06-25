@@ -108,11 +108,10 @@ function main() {
      # [12] 计算节点挂载配置存储NFS检查
      # check_nfs_result
      # [13] 计算节点批量创建用户检查
-     check_users_result
+     check_json_users_result
      ###############运行日志路径提示###############
      view_log_path
 }
 
+# 主函数程序入口
 main
-
-exit_and_cleanENV 0

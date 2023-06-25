@@ -25,7 +25,7 @@ source ${base_directory}/common.sh ${3}
 # YUM镜像文件名
 yum_iso_file_name=""
 # YUM镜像安装挂载路径
-yum_install_path=mnt
+yum_install_path=$(readlink -f "$(get_ini_value basic_conf basic_yum_install_path mnt)")
 # 获取当前主机IP地址（无法使用ifconfig命令情况下）
 current_ip_addr=$(ip addr | awk '/^[0-9]+: / {}; /inet.*global/ {print gensub(/(.*)\/(.*)/, "\\1", "g", $2)}')
 
@@ -38,7 +38,7 @@ function check_local_repo() {
     else
         var1=$(grep "name=local" /etc/yum.repos.d/local.repo)
     fi
-    local var2=$(grep "baseurl=file:///${yum_install_path}/" /etc/yum.repos.d/local.repo)
+    local var2=$(grep "baseurl=file://${yum_install_path}/" /etc/yum.repos.d/local.repo)
     local var3=$(grep "enabled=1" /etc/yum.repos.d/local.repo)
     local var4=$(grep "gpgcheck=0" /etc/yum.repos.d/local.repo)
     if [ -z "${var1}" ] || [ -z "${var2}" ] || [ -z "${var3}" ] || [ -z "${var4}" ]; then
@@ -111,9 +111,9 @@ function check_yum_server() {
             ret_code_mount="1"
         fi
         # 检查是否配置开机自启动
-        local old_content=$(tail /etc/fstab)
+        local old_content=$(tail /etc/rc.d/rc.local)
         # 字符之间的空格不能随意删减
-        local modify_content="${sourcecode_dir}/${yum_iso_file_name} /${yum_install_path} iso9660 defaults 0 0"
+        local modify_content="mount -t iso9660 -o loop"
         if [[ "${old_content}" =~ "${modify_content}" ]]; then
             ret_code_auto_start="0"
         else
@@ -162,8 +162,8 @@ function config_network_yum() {
     # 1.检查安装httpd服务
     if [ "$(rpm -qa httpd)" == "" ]; then
         yum install -y httpd >> ${operation_log_path}/access_all.log 2>&1
-        systemctl enable httpd.service && systemctl start httpd.service
     fi
+    systemctl enable httpd.service && systemctl start httpd.service
     if [ "$(systemctl status httpd.service | grep -o "active (running)")" == "" ]; then
         systemctl start httpd.service
     fi
@@ -172,7 +172,7 @@ function config_network_yum() {
         rm -rf /var/www/html/${3}/
     fi
     mkdir -p /var/www/html/${3}
-    cp -rf /${yum_install_path}/* /var/www/html/${3}
+    cp -rf ${yum_install_path}/* /var/www/html/${3}
     # 3.验证网络YUM源是否配置成功
     # 网络YUM源访问地址
     local yum_http_url=http://${om_machine_ip}/${3}
@@ -182,26 +182,27 @@ function config_network_yum() {
         local current_date=$(date '+%Y%m%d%H%M%S')
         log_info "Yum image source is mounted successfully, the yum configuration starts..." true
         log_info "Configuring cd-rom mounting for automatic startup upon system startup." true
-        log_info "Backing up [/etc/fstab] file to [/etc/fstab.${current_date}.bak]." true
+        log_info "Backing up [/etc/rc.d/rc.local] file to [/etc/rc.d/rc.local.${current_date}.bak]." true
         # 4.备份开机自启动文件
-        cp /etc/fstab /etc/fstab.${current_date}.bak
+        cp /etc/rc.d/rc.local /etc/rc.d/rc.local.${current_date}.bak
         # 5.设置配置开机自动挂载
         # 5.1判断是否存在之前已挂载的YUM自启动配置内容
-        local line_nums=($(echo -n $(cat /etc/fstab | grep -n "iso /${yum_install_path} iso9660 defaults 0 0" | cut -d ":" -f 1)))
+        local line_nums=($(echo -n $(cat /etc/rc.d/rc.local | grep -n "mount -t iso9660 -o loop" | cut -d ":" -f 1)))
         if [ -n "${line_nums}" ]; then
             for (( i = 0; i < ${#line_nums[@]}; i++ )); do
                 # 5.2删除之前配置的自启动配置内容
-                sed -i "${line_nums[i]}d" /etc/fstab
+                sed -i "${line_nums[i]}d" /etc/rc.d/rc.local
             done
             # 5.3删除多余空白行
-            sed -i /^[[:space:]]*$/d /etc/fstab
+            sed -i /^[[:space:]]*$/d /etc/rc.d/rc.local
         fi
-        if [[ "$(tail /etc/fstab)" =~ "${1}/${yum_iso_file_name} /${yum_install_path} iso9660 defaults 0 0" ]]; then
+        if [[ "$(tail /etc/rc.d/rc.local)" =~ "mount -t iso9660 -o loop ${1}/${yum_iso_file_name} ${yum_install_path}" ]]; then
             log_info "Automatic mounting upon startup has been configured." true
         else
             # 5.4追加内容到配置文件中
-            echo -ne "\n${1}/${yum_iso_file_name} /${yum_install_path} iso9660 defaults 0 0" >>/etc/fstab
+            echo -ne "mount -t iso9660 -o loop ${1}/${yum_iso_file_name} ${yum_install_path}" >>/etc/rc.d/rc.local
         fi
+        chmod +x /etc/rc.d/rc.local
         # 6.重新生成repo文件
         local http_repo_name=${2}/http-local.repo
         if [ -f "${http_repo_name}" ]; then
@@ -230,22 +231,22 @@ function mount_local_yum() {
     yum list 1>/dev/null 2>/dev/null
     if [ $? -eq 0 ]; then
         yum list | grep vim 1>/dev/null 2>/dev/null
-        if [ $? -eq 0 ] || [ "$(df -h | grep -o /${yum_install_path})" != "" ]; then
-            umount /${yum_install_path}/
+        if [ $? -eq 0 ] || [ "$(df -h | grep -o ${yum_install_path})" != "" ]; then
+            umount -l ${yum_install_path}/
         fi
     fi
     # 1. 创建YUM源挂载路径
-    if [ ! -d "/${yum_install_path}/" ]; then
-        mkdir -m 755 -p /${yum_install_path}/
+    if [ ! -d "${yum_install_path}/" ]; then
+        mkdir -m 755 -p ${yum_install_path}/
     fi
     # 2. 挂载YUM镜像
-    mount -t iso9660 -o loop ${1}/${yum_iso_file_name} /${yum_install_path} >> ${operation_log_path}/access_all.log 2>&1
+    mount -t iso9660 -o loop ${1}/${yum_iso_file_name} ${yum_install_path} >> ${operation_log_path}/access_all.log 2>&1
     # 3. 检查是否挂载成功
-    if [ -z "$(df -h | grep -o /${yum_install_path})" ]; then
+    if [ -z "$(df -h | grep -o ${yum_install_path})" ]; then
         log_error "[${1}] mounting failed, check the mounting process." false
         exit_and_cleanENV 1
     else
-        mount /${yum_install_path} >> ${operation_log_path}/access_all.log 2>&1
+        mount ${yum_install_path} >> ${operation_log_path}/access_all.log 2>&1
         if [ ! -d "/etc/yum.repos.bak/" ]; then
             mkdir -m 755 -p /etc/yum.repos.bak/
         fi
@@ -254,10 +255,10 @@ function mount_local_yum() {
         # 4. 生成新的repo配置文件
         if [ -n "$(cat /etc/system-release | grep "CentOS Linux release 8.2.2004")" ]; then
             # 支持CentOS_V8.2
-            echo -ne "[centos-BaseOS]\nname=centos-BaseOS\nbaseurl=file:///${yum_install_path}/BaseOS/\nenabled=1\ngpgcheck=0\n\n" > /etc/yum.repos.d/local.repo
-            echo -ne "[centos-AppStream]\nname=centos-AppStream\nbaseurl=file:///${yum_install_path}/AppStream/\nenabled=1\ngpgcheck=0\n\n" >>/etc/yum.repos.d/local.repo
+            echo -ne "[centos-BaseOS]\nname=centos-BaseOS\nbaseurl=file://${yum_install_path}/BaseOS/\nenabled=1\ngpgcheck=0\n\n" > /etc/yum.repos.d/local.repo
+            echo -ne "[centos-AppStream]\nname=centos-AppStream\nbaseurl=file://${yum_install_path}/AppStream/\nenabled=1\ngpgcheck=0\n\n" >>/etc/yum.repos.d/local.repo
         else
-            echo -ne "[local]\nname=local\nbaseurl=file:///${yum_install_path}/\nenabled=1\ngpgcheck=0\n\n" >/etc/yum.repos.d/local.repo  
+            echo -ne "[local]\nname=local\nbaseurl=file://${yum_install_path}/\nenabled=1\ngpgcheck=0\n\n" >/etc/yum.repos.d/local.repo
         fi
         # 5. 清理和重新加载缓存
         yum clean all >> ${operation_log_path}/access_all.log 2>&1 && yum makecache >> ${operation_log_path}/access_all.log 2>&1

@@ -49,46 +49,40 @@
       "group_id": "60008"
     },
     {
-      "user_name": "hacluster",
-      "user_id": "60009",
-      "group_name": "hacluster",
-      "group_id": "60009"
-    },
-    {
       "user_name": "ccp_master",
-      "user_id": "60011",
+      "user_id": "60009",
       "group_name": "ccs_master",
       "group_id": "60001"
     },
     {
       "user_name": "ccp_sysadmin",
-      "user_id": "60012",
+      "user_id": "60010",
       "group_name": "ccp_sysadmin",
-      "group_id": "60012"
+      "group_id": "60010"
     },
     {
       "user_name": "ccp_secadmin",
-      "user_id": "60013",
+      "user_id": "60011",
       "group_name": "ccp_secadmin",
-      "group_id": "60013"
+      "group_id": "60011"
     },
     {
       "user_name": "ccp_audadmin",
-      "user_id": "60014",
+      "user_id": "60012",
       "group_name": "ccp_audadmin",
-      "group_id": "60014"
+      "group_id": "60012"
     },
     {
       "user_name": "hmpi_master",
-      "user_id": "60015",
+      "user_id": "60013",
       "group_name": "hmpi_master",
-      "group_id": "60015"
+      "group_id": "60013"
     },
     {
       "user_name": "hmpi_user",
-      "user_id": "60016",
+      "user_id": "60014",
       "group_name": "hmpi_user",
-      "group_id": "60016"
+      "group_id": "60014"
     }
   ]
 }
