@@ -10,44 +10,53 @@
 
 # 引用公共函数文件开始
 if [ "${1}" == "opt" ]; then
-    # 定义脚本文件、配置文件存放目录
-    base_directory=/${1}/hpcpilot/hpc_script
-    sourcecode_dir=/${1}/hpcpilot/sourcecode
+  # 定义脚本文件、配置文件存放目录
+  base_directory=/${1}/hpcpilot/hpc_script
+  sourcecode_dir=/${1}/hpcpilot/sourcecode
 else
-    # 定义脚本文件、配置文件存放目录
-    base_directory=/${1}/software/tools/hpc_script
-    sourcecode_dir=/${1}/software/sourcecode
+  # 定义脚本文件、配置文件存放目录
+  base_directory=/${1}/software/tools/hpc_script
+  sourcecode_dir=/${1}/software/sourcecode
 fi
 source ${base_directory}/common.sh ${1}
 # 引用公共函数文件结束
 
-ROOT_LDAP_INIT_PASSWD=$(get_ini_value service_conf ldap_login_password)
-MASTER_IP=$(get_ini_value service_conf master_ldap_server_ip)
-SLAVE_IP=$(get_ini_value service_conf slave_ldap_server_ip)
-ROOT_LOGIN_PW=$(get_ini_value service_conf common_sys_root_password)
-VIRTUAL_MASTER_IP=$(get_ini_value service_conf virtual_ldap_server_ip)
+root_dir=${1}
+# ldap登录密码
+ldap_login_password=$(get_ini_value service_conf ldap_login_password)
+# ldap主节点IP地址
+ldap_master_ip=$(get_ini_value service_conf master_ldap_server_ip)
+# ldap备节点IP地址
+ldap_slave_ip=$(get_ini_value service_conf slave_ldap_server_ip)
+# HA主备配置时虚拟IP地址
+ldap_virtual_ip=$(get_ini_value service_conf virtual_ldap_server_ip)
+# 获取ldap服务访问域名,如果不填或者为空默认值为：dc=huawei,dc=com
+ldap_domain=$(get_ini_value service_conf ldap_domain_name ldap01.huawei.com)
+# 根据ldap服务访问域名获取dc值(array_dc[0]=huawei,array_dc[1]=com)
+array_dc=($(get_ldapdc_by_domain))
+# 服务器节点ROOT登录密码
+root_login_password=$(get_ini_value service_conf common_sys_root_password)
+# 获取本机IP
+IP_ADDR=$(ifconfig -a 2> /dev/null | grep inet | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | tr -d "addr:")
 
-IP_ADDR=`ifconfig -a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}'|tr -d "addr:"` # 获取本机IP
-
-HOST_NAME=`hostname`
+HOST_NAME=$(hostname)
 
 VIRTUAL_ROUTER_ID=204
-ETH_NAME=`ip addr | grep -B 2 $IP_ADDR | head -n 1 | awk -F: '{print $2}' | tr -d [:blank:]`
+ETH_NAME=$(ip addr | grep -B 2 $IP_ADDR | head -n 1 | awk -F: '{print $2}' | tr -d [:blank:])
 
-OS_TYPE=`cat /etc/system-release | awk '{print $1}'`
+OS_TYPE=$(cat /etc/system-release | awk '{print $1}')
 MIGRATE_DIR="/usr/share/migrationtools/migrate_common.ph"
 LDAP_SERVICE_DIR="/usr/lib/systemd/system/slapd.service"
 RSA_DIR="/root/.ssh"
 
-CURRENT_PATH=`pwd`
+CURRENT_PATH=$(pwd)
 REMOTE_PATH="/root"
 
 function expect_scp_to_remote_command() {
-    local ip="$1"
-    local pw="$2"
-    local source_path="$3"
-    local target_path="$4"
-
+  local ip="$1"
+  local pw="$2"
+  local source_path="$3"
+  local target_path="$4"
     expect << EOF
     log_user 0
     set timeout 120
@@ -66,99 +75,46 @@ EOF
 }
 
 function scp_to_remote_command() {
-    local ip="$1"
-    local source_path="$2"
-    local target_path="$3"
-	local pw="$4"
-	echo "remote_ip: ${ip} source_path: ${source_path} target_path: ${target_path} passwd: ${pw}"
-    ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname"
-    if [ 0 = $? ]; then
-        scp -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -q "${source_path}" root@${ip}:"${target_path}"
-    else
-        yum install -y tcl
-		yum install -y expect
-		expect_scp_to_remote_command "${ip}" "${pw}" "${source_path}" "${target_path}"
-    fi
-    local result=$?
-    return $result
+  local ip="$1"
+  local source_path="$2"
+  local target_path="$3"
+  local pw="$4"
+  echo "remote_ip: ${ip} source_path: ${source_path} target_path: ${target_path} passwd: ${pw}"
+  ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname"
+  if [ 0 = $? ]; then
+    scp -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -q "${source_path}" root@${ip}:"${target_path}"
+  else
+    yum install -y tcl
+    yum install -y expect
+    expect_scp_to_remote_command "${ip}" "${pw}" "${source_path}" "${target_path}"
+  fi
+  local result=$?
+  return $result
 }
 
-function expect_ssh_command() {
-    local ip="$1"
-    local pw="$2"
-    local cmd="$3"
-    local show_info="$4"
-    local time_out="$5"
-
-    local expect_show="0"
-    [ "${show_info}" = "true" ] && expect_show="1"
-    [ -z "${time_out}" ] && time_out=120
-
-    expect << EOF
-    log_user "${expect_show}"
-    set timeout "${time_out}"
-    spawn bash -c {ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o NumberOfPasswordPrompts=1 root@${ip} "${cmd}"}
-    expect {
-        "yes/no" { send "yes\n";exp_continue }
-        "password:" { send -- "${pw}\n" }
-        default { exit 1 }
-    }
-    expect eof
-    catch wait result;
-    exit [lindex \$result 3]
-EOF
-    local result=$?
-    return $result
+function selinux_firewall_check() {
+  local selinux_status=$(sestatus | awk 'NR==1{print $3}')
+  if [ "${selinux_status}" = "enabled" ]; then
+      log_info "Disabling SELinux..." true
+      sed -i '/SELINUX/s/enforcing/disabled/' /etc/selinux/config && setenforce 0
+      log_info "Operating system needs to be restarted, please run the reboot command." true
+      exit_and_cleanENV 0
+  fi
+  log_info "Disabling firewalld..." true
+  systemctl stop firewalld
+  systemctl disable firewalld
+  firewall-cmd --state 2>/tmp/firewall_status.txt
+  local firewall_status=$(cat /tmp/firewall_status.txt)
+  if [[ "${firewall_status}" == "not running" ]]; then
+      log_info "The firewall has been disabled." true
+  else
+      log_error "Failed to disable the firewall." true
+      exit_and_cleanENV 255
+  fi
 }
 
-function ssh_command() {
-    local ip="$1"
-    local cmd="$2"
-    local pw="$3"
-	  local show_info="$4"
-    local time_out="$5"
-
-    local ssh_show="-q"
-    local blank_set="> /dev/null 2>&1"
-    if [ "${show_info}" = "true" ];then
-        ssh_show=""
-        blank_set=""
-    fi
-    ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname"
-    if [ 0 = $? ]; then
-        ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 ${ssh_show} root@${ip} "${cmd}" "${blank_set}"
-    else
-        expect_ssh_command "${ip}" "${pw}" "${cmd}" "${show_info}" "${time_out}"
-    fi
-    local result=$?
-    return $result
-}
-
-function selinux_firewall_check(){
-	# selinux status check
-	selinux_status=`sestatus |awk 'NR==1{print $3}'`
-	if [ "${selinux_status}" = "enabled" ]; then
-		log_info "Disabling SELinux..." true
-		sed -i '/SELINUX/s/enforcing/disabled/' /etc/selinux/config && setenforce 0
-		log_info "The system needs to be restarted, please run the reboot command." true
-		exit 0
-	fi
-	
-	log_info "Disabling firewalld..." true
-	systemctl stop firewalld
-	systemctl disable firewalld
-	firewall-cmd --state 2> /tmp/firewall_status.txt
-	firewall_status=`cat /tmp/firewall_status.txt`
-	if [[ "${firewall_status}" = "not running" ]];then
-		log_info "The firewall has been disabled." true
-	else
-		log_error "Failed to disable the firewall." true
-		exit 255
-	fi
-}
-
-function create_slapd_ldif(){
-cat > /etc/openldap/slapd.ldif << EOF
+function create_slapd_ldif() {
+  cat >/etc/openldap/slapd.ldif <<EOF
 dn: cn=config
 objectClass: olcGlobal
 cn: config
@@ -189,153 +145,145 @@ dn: olcDatabase=monitor,cn=config
 objectClass: olcDatabaseConfig
 olcDatabase: monitor
 olcAccess: to * by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=external,c
- n=auth" read by dn.base="cn=root,dc=huawei,dc=com" read by * none
+ n=auth" read by dn.base="cn=root,dc=${array_dc[0]},dc=${array_dc[1]}" read by * none
 
 dn: olcDatabase=mdb,cn=config
 objectClass: olcDatabaseConfig
 objectClass: olcMdbConfig
 olcDatabase: mdb
-olcSuffix: dc=huawei,dc=com
-olcRootDN: cn=root,dc=huawei,dc=com
+olcSuffix: dc=${array_dc[0]},dc=${array_dc[1]}
+olcRootDN: cn=root,dc=${array_dc[0]},dc=${array_dc[1]}
 olcRootPW: $1
 olcDbDirectory: /var/lib/ldap
 olcDbIndex: objectClass eq,pres
 olcDbIndex: ou,cn,mail,surname,givenname eq,pres,sub
 EOF
 
-	if [ $OS_TYPE != "openEuler" ];then
-		cp /usr/share/openldap-servers/DB_CONFIG.example /var/lib/ldap/DB_CONFIG
-	fi
+  if [ $OS_TYPE != "openEuler" ]; then
+    cp /usr/share/openldap-servers/DB_CONFIG.example /var/lib/ldap/DB_CONFIG
+  fi
 }
 
-function deploy_ldap_service(){
-	log_info "Yum OpenLDAP service installing..." true
-	if [ $OS_TYPE = "Kylin" ] || [ $OS_TYPE = "openEuler" ] || [ $OS_TYPE = "Red Hat Enterprise Linux" ];then
-		yum -y localinstall ${sourcecode_dir}/migrationtools-47-15.el7.noarch.rpm
-		yum -y install openldap openldap-clients openldap-servers openldap-devel migrationtools
-		if [ $? -ne 0 ];then
-			log_error "Failed to install the LDAP service." true
-			exit 255
-		fi
-	elif [ $OS_TYPE = "CentOS" ];then
-		yum -y install openldap compat-openldap openldap-clients openldap-servers openldap-servers-sql openldap-devel migrationtools
-		if [ $? -ne 0 ];then
-			log_error "Failed to install the LDAP service." true
-			exit 255
-		fi
-	fi
-		
-	log_info "ldap version:" true
-	slapd -VV
+function deploy_ldap_service() {
+    log_info "Yum OpenLDAP service installing..." true
+    if [ $OS_TYPE = "Kylin" ] || [ $OS_TYPE = "openEuler" ] || [ $OS_TYPE = "Red Hat Enterprise Linux" ]; then
+        yum -y localinstall ${sourcecode_dir}/migrationtools-47-15.el7.noarch.rpm
+        yum -y install openldap openldap-clients openldap-servers openldap-devel migrationtools
+        if [ $? -ne 0 ]; then
+            log_error "Failed to install the LDAP service." true
+            exit_and_cleanENV 255
+        fi
+    elif [ $OS_TYPE = "CentOS" ]; then
+        yum -y install openldap compat-openldap openldap-clients openldap-servers openldap-servers-sql openldap-devel migrationtools
+        if [ $? -ne 0 ]; then
+            log_error "Failed to install the LDAP service." true
+            exit_and_cleanENV 255
+        fi
+    fi
+    log_info "ldap version: $(slapd -VV)" true
+    log_info "Configuring the LDAP Service" true
+    mv /etc/openldap/slapd.d /etc/openldap/slapd.d.bak
+    mkdir -p /etc/openldap/slapd.d
+  
+    passwd=$(slappasswd -s ${ldap_login_password})
+    create_slapd_ldif $passwd
+    slapadd -n 0 -F /etc/openldap/slapd.d -l /etc/openldap/slapd.ldif
+    chown ldap:ldap -R /etc/openldap/slapd.d
+    chown ldap:ldap -R /var/lib/ldap
+    chmod 700 -R /var/lib/ldap
+    slaptest -u
+    if [ $? -eq 0 ]; then
+        log_info "Basic configuration of OpenLDAP is complete." true
+    else
+        log_error "Basic configuration of OpenLDAP is failed." true
+        exit_and_cleanENV 255
+    fi
+  
+    systemctl enable slapd && systemctl start slapd
+    if [ "$(systemctl status slapd | grep active | grep running)" != "" ]; then
+        log_info "Slapd service is running properly." true
+    else
+        log_error "Slapd service is running abnormally." true
+        exit_and_cleanENV 255
+    fi
 
-	log_info "Configuring the LDAP Service" true
-	mv /etc/openldap/slapd.d /etc/openldap/slapd.d.bak
-	mkdir -p /etc/openldap/slapd.d
-	
-	passwd=`slappasswd -s $ROOT_LDAP_INIT_PASSWD`
-	create_slapd_ldif $passwd
-	slapadd -n 0 -F /etc/openldap/slapd.d -l /etc/openldap/slapd.ldif
-	chown ldap:ldap -R /etc/openldap/slapd.d
-	chown ldap:ldap -R /var/lib/ldap
-	chmod 700 -R /var/lib/ldap
-	slaptest -u
-	if [ $? -eq 0 ]; then
-		log_info "The basic configuration of OpenLDAP is complete." true
-	else
-		log_error "ERROR: The basic configuration of OpenLDAP is failed." true
-		exit 255
-	fi
-	
-	systemctl enable slapd
-	systemctl start slapd
-	slapd_status=`systemctl status slapd | grep active | grep running`
-	if [ "$slapd_status" != "" ];then
-		log_info "Slapd service is running properly." true
-	else
-		log_error "Slapd service is running abnormally." true
-		exit 255
-	fi
-	
-	netstat -antup | grep 389 | grep slapd
-	if [ $? != 0 ]; then
-		log_error "ERROR: The slapd service listening port is abnormal." true
-		exit 255
-	else 
-		log_info "The slapd service listening port is normal." true
-	fi
-	
-	log_info "Modifying migration file..." true
-	sed -i "71c \$DEFAULT_MAIL_DOMAIN = \"huawei.com\";" $MIGRATE_DIR
-	sed -i "74c \$DEFAULT_BASE = \"dc=huawei,dc=com\";" $MIGRATE_DIR
-	sed -i "90s/0/1/g" $MIGRATE_DIR
-	
-	log_info "Improving service reliability..." true
-	limit_nofile=`cat $LDAP_SERVICE_DIR | grep LimitNOFILE`
-	if [ "$limit_nofile" = "" ]; then
-		sed -i '/Service/a LimitNOFILE=65535\nRestart=always\nRestartSec=30s\nLimitNPROC=65535' $LDAP_SERVICE_DIR
-	fi
-	
-	systemctl daemon-reload
-	systemctl restart slapd
+    netstat -antup | grep 389 | grep slapd
+    if [ $? != 0 ]; then
+        log_error "ERROR: The slapd service listening port is abnormal." true
+        exit_and_cleanENV 255
+    else
+        log_info "The slapd service listening port is normal." true
+    fi
+    log_info "Modifying migration file..." true
+    sed -i "71c \$DEFAULT_MAIL_DOMAIN = \"${array_dc[0]}.${array_dc[1]}\";" $MIGRATE_DIR
+    sed -i "74c \$DEFAULT_BASE = \"dc=${array_dc[0]},dc=${array_dc[1]}\";" $MIGRATE_DIR
+    sed -i "90s/0/1/g" $MIGRATE_DIR
+  
+    log_info "Improving service reliability..." true
+    limit_nofile=$(cat $LDAP_SERVICE_DIR | grep LimitNOFILE)
+    if [ "$limit_nofile" = "" ]; then
+        sed -i '/Service/a LimitNOFILE=65535\nRestart=always\nRestartSec=30s\nLimitNPROC=65535' $LDAP_SERVICE_DIR
+    fi
+    systemctl daemon-reload
+    systemctl restart slapd
 }
 
-function ldap_database_conf(){
-cat > /root/base.ldif << EOF
-dn: dc=huawei,dc=com
-o: huawei com
-dc: huawei
+function ldap_database_conf() {
+  cat >/root/base.ldif <<EOF
+dn: dc=${array_dc[0]},dc=${array_dc[1]}
+o: ${array_dc[0]} ${array_dc[1]}
+dc: ${array_dc[0]}
 objectClass: top
 objectClass: dcObject
-objectclass: organization
+objectClass: organization
 
-dn: cn=root,dc=huawei,dc=com
+dn: cn=root,dc=${array_dc[0]},dc=${array_dc[1]}
 cn: root
 objectClass: organizationalRole
 description: Directory Manager
 
-dn: ou=People,dc=huawei,dc=com
+dn: ou=People,dc=${array_dc[0]},dc=${array_dc[1]}
 ou: People
 objectClass: top
 objectClass: organizationalUnit
 
-dn: ou=Group,dc=huawei,dc=com
+dn: ou=Group,dc=${array_dc[0]},dc=${array_dc[1]}
 ou: Group
 objectClass: top
 objectClass: organizationalUnit
 EOF
-	
-	log_info "Importing the base database..." true
-	ldapadd -x -w "$ROOT_LDAP_INIT_PASSWD" -D "cn=root,dc=huawei,dc=com" -f /root/base.ldif -h localhost
-	log_info "Checking database status..." true
-	ldapsearch -x -D 'cn=root,dc=huawei,dc=com' -w "$ROOT_LDAP_INIT_PASSWD" -b 'dc=huawei,dc=com' | grep dn
+
+    log_info "Importing the base database..." true
+    ldapadd -x -w "${ldap_login_password}" -D "cn=root,dc=${array_dc[0]},dc=${array_dc[1]}" -f /root/base.ldif -h localhost
+    log_info "Checking database status..." true
+    ldapsearch -x -D "cn=root,dc=${array_dc[0]},dc=${array_dc[1]}" -w "${ldap_login_password}" -b "dc=${array_dc[0]},dc=${array_dc[1]}" | grep dn
 }
 
-function ldap_log_conf(){
-	loglevel_file="/root/loglevel.ldif"
-	if [ -f "$loglevel_file" ] && [ -s "$loglevel_file" ]; then
-		log_warn "ldap visit log file already exists" true
-	else
+function ldap_log_conf() {
+  loglevel_file="/root/loglevel.ldif"
+  if [ -f "$loglevel_file" ] && [ -s "$loglevel_file" ]; then
+    log_warn "ldap visit log file already exists" true
+  else
 
-cat > /root/loglevel.ldif << EOF
+    cat >/root/loglevel.ldif <<EOF
 dn: cn=config
 changetype: modify
 replace: olcLogLevel
 olcLogLevel: stats
 EOF
 
-	fi
-	
-	ldapmodify -Y EXTERNAL -H ldapi:/// -f /root/loglevel.ldif
-	systemctl restart slapd
-	
-cat >> /etc/rsyslog.conf << EOF
+  fi
+  ldapmodify -Y EXTERNAL -H ldapi:/// -f /root/loglevel.ldif
+  systemctl restart slapd
+
+  cat >>/etc/rsyslog.conf <<EOF
 local4.* /var/log/slapd.log
 EOF
-	
-	systemctl restart rsyslog
-	systemctl restart slapd
-	
-cat > /etc/logrotate.d/slapd << EOF
+
+  systemctl restart rsyslog
+  systemctl restart slapd
+
+  cat >/etc/logrotate.d/slapd <<EOF
 /var/log/slapd.log{
 daily
 rotate 5
@@ -346,80 +294,78 @@ missingok
 }
 EOF
 
-	logrotate -f /etc/logrotate.d/slapd
+  logrotate -f /etc/logrotate.d/slapd
 }
 
 function ssh_key_conf() {
-	ping -c2 -i0.3 -W1 $1
-	if [ $? != 0 ];then
-		log_error "error: Ping $1 failed." true
-		return 1
-	elif [ -f "$RSA_DIR/id_rsa" ] && [ -f "$RSA_DIR/id_rsa.pub" ];then
-		log_warn "Public/private rsa key pair already exists." true
-	else
-		log_info "Generate rsa key pair, please keep pressing Enter..." true
-		ssh-keygen -t rsa
-	fi
-	
-	ssh-copy-id -i $RSA_DIR/id_rsa.pub $1
-	local result=$?
-	return $result
+    ping -c2 -i0.3 -W1 $1
+    if [ $? != 0 ]; then
+      log_error "error: Ping $1 failed." true
+      return 1
+    elif [ -f "$RSA_DIR/id_rsa" ] && [ -f "$RSA_DIR/id_rsa.pub" ]; then
+      log_warn "Public/private rsa key pair already exists." true
+    else
+      log_info "Generate rsa key pair, please keep pressing Enter..." true
+      ssh-keygen -t rsa
+    fi
+  
+    ssh-copy-id -i $RSA_DIR/id_rsa.pub $1
+    local result=$?
+    return $result
 }
 
-function master_slave_trust_conf(){
-	if [ -n "$NODE_PRI" ];then
-		log_info "Configuring /etc/hosts..." true
-		local master_host_name=`ssh root@$MASTER_IP "hostname"`
-		local slave_host_name=`ssh root@$SLAVE_IP "hostname"`
-		echo "$MASTER_IP $master_host_name" >> /etc/hosts
-		echo "$SLAVE_IP $slave_host_name" >> /etc/hosts
-	fi
-	
-	if [ "$NODE_PRI" = "master" ];then
-		ssh_key_conf $SLAVE_IP
-	elif [ "$NODE_PRI" = "slave" ];then
-		ssh_key_conf $MASTER_IP
-	fi
-	
-	if [ $OS_TYPE = "CentOS" ] || [ $OS_TYPE = "Red Hat Enterprise Linux" ];then
-		echo "SLAPD_LDAPI=yes" >> /etc/sysconfig/slapd;
-		systemctl restart slapd
-	fi
-	
-	# Synchronize configuration
-	log_info "Synchronize configuration..." true
-	sync_path="/root/ldap-sync/"
-	mkdir -p $sync_path
+function master_slave_trust_conf() {
+    if [ -n "$NODE_PRI" ]; then
+        log_info "Configuring /etc/hosts..." true
+        local master_host_name=$(ssh root@${ldap_master_ip} "hostname")
+        local slave_host_name=$(ssh root@${ldap_slave_ip} "hostname")
+        echo "${ldap_master_ip} $master_host_name" >>/etc/hosts
+        echo "${ldap_slave_ip} $slave_host_name" >>/etc/hosts
+    fi
+    if [ "$NODE_PRI" = "master" ]; then
+        ssh_key_conf ${ldap_slave_ip}
+    elif [ "$NODE_PRI" = "slave" ]; then
+        ssh_key_conf ${ldap_master_ip}
+    fi
+  
+    if [ $OS_TYPE = "CentOS" ] || [ $OS_TYPE = "Red Hat Enterprise Linux" ]; then
+        echo "SLAPD_LDAPI=yes" >>/etc/sysconfig/slapd
+        systemctl restart slapd
+    fi
+  # Synchronize configuration
+  log_info "Synchronize configuration..." true
+  sync_path="/root/ldap-sync/"
+  mkdir -p $sync_path
 
-cat > $sync_path/mod_syncprov.ldif << EOF
+  cat >$sync_path/mod_syncprov.ldif <<EOF
 dn: cn=module,cn=config
 objectClass: olcModuleList
 cn: module
 olcModulePath: /usr/lib64/openldap
 olcModuleLoad: syncprov.la
 EOF
-	
-cat > $sync_path/serverid.ldif << EOF
+
+  cat >$sync_path/serverid.ldif <<EOF
 dn: cn=config
 changetype: modify
 add: olcServerId
 EOF
 
-	if [ $OS_TYPE = "CentOS" ] || [ $OS_TYPE = "Kylin" ] || [ $OS_TYPE = "openEuler" ];then
-		if [ "$NODE_PRI" = "master" ];then
-			echo "olcServerId: 1" >> $sync_path/serverid.ldif
-		elif [ "$NODE_PRI" = "slave" ];then
-			echo "olcServerId: 2" >> $sync_path/serverid.ldif
-		fi	
-	elif [ $OS_TYPE = "Red Hat Enterprise Linux" ];then
-		if [ "$NODE_PRI" = "master" ];then
-			echo "olcServerId: 1 ldap://$MASTER_IP" >> $sync_path/serverid.ldif
-		elif [ "$NODE_PRI" = "slave" ];then
-			echo "olcServerId: 2 ldap://$SLAVE_IP" >> $sync_path/serverid.ldif
-		fi
-	fi
-	
-cat > $sync_path/syncprov.ldif << EOF
+  if [ $OS_TYPE = "CentOS" ] || [ $OS_TYPE = "Kylin" ] || [ $OS_TYPE = "openEuler" ]; then
+    if [ "$NODE_PRI" = "master" ]; then
+      echo "olcServerId: 1" >>$sync_path/serverid.ldif
+    elif [ "$NODE_PRI" = "slave" ]; then
+      echo "olcServerId: 2" >>$sync_path/serverid.ldif
+    fi
+  elif [ $OS_TYPE = "Red Hat Enterprise Linux" ]; then
+    if [ "$NODE_PRI" = "master" ]; then
+      echo "olcServerId: 1 ldap://${ldap_master_ip}" >>$sync_path/serverid.ldif
+    elif [ "$NODE_PRI" = "slave" ]; then
+      echo "olcServerId: 2 ldap://${ldap_slave_ip}" >>$sync_path/serverid.ldif
+    fi
+  fi
+
+  cat >$sync_path/syncprov.ldif <<EOF
 dn: olcOverlay=syncprov,olcDatabase={2}mdb,cn=config
 objectClass: olcOverlayConfig
 objectClass: olcSyncProvConfig
@@ -427,27 +373,27 @@ olcOverlay: syncprov
 olcSpSessionLog: 100
 EOF
 
-cat > $sync_path/sync-ha.ldif << EOF
+  cat >$sync_path/sync-ha.ldif <<EOF
 dn: olcDatabase={2}mdb,cn=config
 changetype: modify
 add: olcSyncRepl
 olcSyncRepl: rid=001
-             provider=ldap://$MASTER_IP
+             provider=ldap://${ldap_master_ip}
              bindmethod=simple
-             binddn="cn=root,dc=huawei,dc=com"
-             credentials=$ROOT_LDAP_INIT_PASSWD
-             searchbase="dc=huawei,dc=com"
+             binddn="cn=root,dc=${array_dc[0]},dc=${array_dc[1]}"
+             credentials=${ldap_login_password}
+             searchbase="dc=${array_dc[0]},dc=${array_dc[1]}"
              scope=sub
              schemachecking=on
              type=refreshAndPersist
              retry="30 5 300 3"
              interval=00:00:05:0
 olcSyncrepl: rid=002
-             provider=ldap://$SLAVE_IP
+             provider=ldap://${ldap_slave_ip}
              bindmethod=simple
-             binddn="cn=root,dc=huawei,dc=com"
-             credentials=$ROOT_LDAP_INIT_PASSWD
-             searchbase="dc=huawei,dc=com"
+             binddn="cn=root,dc=${array_dc[0]},dc=${array_dc[1]}"
+             credentials=${ldap_login_password}
+             searchbase="dc=${array_dc[0]},dc=${array_dc[1]}"
              scope=sub
              schemachecking=on
              type=refreshAndPersist
@@ -458,49 +404,49 @@ add: olcMirrorMode
 olcMirrorMode: TRUE
 EOF
 
-	log_info "Importing mod_syncprov.ldif..." true
-	ldapadd -Y EXTERNAL -H ldapi:/// -f $sync_path/mod_syncprov.ldif
-	log_info "Importing serverid.ldif..." true
-	ldapmodify -Y EXTERNAL -H ldapi:/// -f $sync_path/serverid.ldif
-	log_info "Importing syncprov.ldif..." true
-	ldapadd -Y EXTERNAL -H ldapi:/// -f $sync_path/syncprov.ldif
-	log_info "Importing sync-ha.ldif..." true
-	ldapadd -Y EXTERNAL -H ldapi:/// -f $sync_path/sync-ha.ldif
-	
-	chown -R ldap:ldap /etc/openldap/slapd.d/
-	
-	systemctl restart slapd
-	
-	log_info "View the existing LDAP users." true
-	ldapsearch -x -D 'cn=root,dc=huawei,dc=com' -w "$ROOT_LDAP_INIT_PASSWD" -b "dc=huawei,dc=com" -H ldap://$IP_ADDR |grep dn
-	
-	if [ $OS_TYPE = "Red Hat Enterprise Linux" ];then
-		if [ "$NODE_PRI" = "master" ];then
-			sed -i "/^olcServerID/c olcServerID: 1" /etc/openldap/slapd.d/cn\=config.ldif
-		elif [ "$NODE_PRI" = "slave" ];then
-			sed -i "/^olcServerID/c olcServerID: 2" /etc/openldap/slapd.d/cn\=config.ldif
-		fi
-	fi
+  log_info "Importing mod_syncprov.ldif..." true
+  ldapadd -Y EXTERNAL -H ldapi:/// -f $sync_path/mod_syncprov.ldif
+  log_info "Importing serverid.ldif..." true
+  ldapmodify -Y EXTERNAL -H ldapi:/// -f $sync_path/serverid.ldif
+  log_info "Importing syncprov.ldif..." true
+  ldapadd -Y EXTERNAL -H ldapi:/// -f $sync_path/syncprov.ldif
+  log_info "Importing sync-ha.ldif..." true
+  ldapadd -Y EXTERNAL -H ldapi:/// -f $sync_path/sync-ha.ldif
+
+  chown -R ldap:ldap /etc/openldap/slapd.d/
+
+  systemctl restart slapd
+
+  log_info "View the existing LDAP users." true
+  ldapsearch -x -D "cn=root,dc=${array_dc[0]},dc=${array_dc[1]}" -w "${ldap_login_password}" -b "dc=${array_dc[0]},dc=${array_dc[1]}" -H ldap://$IP_ADDR | grep dn
+
+  if [ $OS_TYPE = "Red Hat Enterprise Linux" ]; then
+    if [ "$NODE_PRI" = "master" ]; then
+      sed -i "/^olcServerID/c olcServerID: 1" /etc/openldap/slapd.d/cn\=config.ldif
+    elif [ "$NODE_PRI" = "slave" ]; then
+      sed -i "/^olcServerID/c olcServerID: 2" /etc/openldap/slapd.d/cn\=config.ldif
+    fi
+  fi
 }
 
-function failover_conf(){
-	log_info "ldap failover configuration..." true
-	yum install keepalived -y
-	
-	failover_path="/root/fail-over"
-	mkdir -p $failover_path
-	
-cat > $failover_path/slapd_master.sh << EOF
+function failover_conf() {
+  log_info "ldap failover configuration..." true
+  yum install keepalived -y
+
+  failover_path="/root/fail-over"
+  mkdir -p $failover_path
+
+  cat >$failover_path/slapd_master.sh <<EOF
 #!/bin/bash
 systemctl start slapd.service
 EOF
 
-cat > $failover_path/slapd_stop.sh << EOF
+  cat >$failover_path/slapd_stop.sh <<EOF
 #!/bin/bash
 systemctl stop slapd.service
 EOF
 
-cat > $failover_path/slapd_check.sh << EOF
+  cat >$failover_path/slapd_check.sh <<EOF
 #!/bin/bash
 ldapPid=\$(ps -ef |grep /usr/sbin/slapd|grep -v grep|awk '{print $2}'|grep -v PID)
 if [ "\$ldapPid" == "" ]; then
@@ -511,21 +457,21 @@ else
 fi
 EOF
 
-	chmod o+x $failover_path/slapd_master.sh
-	chmod o+x $failover_path/slapd_stop.sh
-	chmod o+x $failover_path/slapd_check.sh
-	
-	if [ "$NODE_PRI" = "master" ];then
-		state="MASTER"
-	elif [ "$NODE_PRI" = "slave" ];then
-		state="BACKUP"
-	fi
-	
-	if [ $OS_TYPE = "Red Hat Enterprise Linux" ];then
-		rm -f /etc/keepalived/keepalived.conf
-	else
-	
-cat > /etc/keepalived/keepalived.conf << EOF
+  chmod o+x $failover_path/slapd_master.sh
+  chmod o+x $failover_path/slapd_stop.sh
+  chmod o+x $failover_path/slapd_check.sh
+
+  if [ "$NODE_PRI" = "master" ]; then
+    state="MASTER"
+  elif [ "$NODE_PRI" = "slave" ]; then
+    state="BACKUP"
+  fi
+
+  if [ $OS_TYPE = "Red Hat Enterprise Linux" ]; then
+    rm -f /etc/keepalived/keepalived.conf
+  else
+
+    cat >/etc/keepalived/keepalived.conf <<EOF
 ! Configuration File for keepalived
 global_defs {
 	router_id $HOST_NAME
@@ -543,7 +489,7 @@ vrrp_instance VI_LDAP {
 	priority 100
 	advert_int 1
 	virtual_ipaddress {
-	 $VIRTUAL_MASTER_IP
+	 ${ldap_virtual_ip}
 	}
 	notify_master "$failover_path/slapd_master.sh"
 	notify_backup "$failover_path/slapd_master.sh"
@@ -553,83 +499,85 @@ vrrp_instance VI_LDAP {
 	}
 }
 EOF
-	fi
-	
-	chmod 644 /etc/keepalived/keepalived.conf
-	systemctl enable keepalived.service
-	systemctl restart keepalived.service
-	
-	systemctl disable NetworkManager.service
-	systemctl stop NetworkManager.service
+  fi
+
+  chmod 644 /etc/keepalived/keepalived.conf
+  systemctl enable keepalived.service
+  systemctl restart keepalived.service
+
+  systemctl disable NetworkManager.service
+  systemctl stop NetworkManager.service
 }
 
-function ssl_integration(){
-	local cert_dir="/etc/openldap/certs"
-	[ ! -d $cert_dir ] && mkdir $cert_dir
-	if [ $IP_ADDR = $MASTER_IP ];then
-		log_info "SSL integration on the server..." true
-		log_info "Start generating the certificate file." true
-		
-		DOMAIN_NAME=huawei.com
-		if [ -n "$NODE_PRI" ];then
-			IP_ADD="$VIRTUAL_MASTER_IP"
-		else
-			IP_ADD=$IP_ADDR
-		fi
+function ssl_integration() {
+  local cert_dir="/etc/openldap/certs"
+  [ ! -d ${cert_dir} ] && mkdir ${cert_dir}
+  if [ $IP_ADDR = ${ldap_master_ip} ]; then
+    log_info "SSL integration on the server..." true
+    log_info "Start generating the certificate file." true
+    if [ -n "$NODE_PRI" ]; then
+      IP_ADD="${ldap_virtual_ip}"
+    else
+      IP_ADD=$IP_ADDR
+    fi
 
-cat > $cert_dir/my-ssl.conf <<EOF
+    cat >$cert_dir/my-ssl.conf <<EOF
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
 keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
 extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 [ alt_names ]
-DNS.1 = ${DOMAIN_NAME}
+DNS.1 = ${ldap_domain}
 IP.1 = ${IP_ADD}
 EOF
 
-	openssl genrsa -out $cert_dir/ldap.key 4096
-	openssl req -new -sha256 -subj "/C=CN/ST=GuangDong/L=ShenZhen/O=HW/OU=IT/CN=${DOMAIN_NAME}" -out $cert_dir/ldap.csr -key $cert_dir/ldap.key
-	openssl x509 -req -days 3650 -in $cert_dir/ldap.csr -signkey $cert_dir/ldap.key -out $cert_dir/ldap.crt -extfile $cert_dir/my-ssl.conf
-	openssl x509 -in $cert_dir/ldap.crt -text -noout
-	fi
+    openssl genrsa -out $cert_dir/ldap.key 4096
+    openssl req -new -sha256 -subj "/C=CN/ST=GuangDong/L=ShenZhen/O=HW/OU=IT/CN=${ldap_domain}" -out $cert_dir/ldap.csr -key $cert_dir/ldap.key
+    openssl x509 -req -days 3650 -in $cert_dir/ldap.csr -signkey $cert_dir/ldap.key -out $cert_dir/ldap.crt -extfile $cert_dir/my-ssl.conf
+    openssl x509 -in $cert_dir/ldap.crt -text -noout
+  fi
 
-	if [ "$NODE_PRI" = "slave" ];then
-		scp root@$MASTER_IP:$cert_dir/ldap* $cert_dir
-	fi
-	
-	chown ldap:ldap -R $cert_dir
-	cp $cert_dir/ldap.crt ${base_directory}/service_script
+  if [ "$NODE_PRI" = "slave" ]; then
+    scp root@${ldap_master_ip}:$cert_dir/ldap* $cert_dir
+  fi
 
-	log_info "adding cert file..." true
-	sed -i "/^olcTLSCertificateFile/d" /etc/openldap/slapd.d/cn\=config.ldif
-	sed -i "/^olcTLSCertificateKeyFile/d" /etc/openldap/slapd.d/cn\=config.ldif
-	sed -i "/^olcAllows/d" /etc/openldap/slapd.d/cn\=config.ldif
-	
-	echo "olcTLSCertificateFile: $cert_dir/ldap.crt" >> /etc/openldap/slapd.d/cn\=config.ldif
-	echo "olcTLSCertificateKeyFile: $cert_dir/ldap.key" >> /etc/openldap/slapd.d/cn\=config.ldif
-	echo "olcAllows: bind_v2" >> /etc/openldap/slapd.d/cn\=config.ldif
-	
-	log_info "Changing the LDAP Startup Mode..." true
-	if [ $OS_TYPE = "CentOS" ] || [ $OS_TYPE = "Red Hat Enterprise Linux" ];then
-		sed -i "/^SLAPD_URLS=/c SLAPD_URLS=\"ldapi:/// ldaps:///\"" /etc/sysconfig/slapd
-	elif [ $OS_TYPE = "Kylin" ] || [ $OS_TYPE = "openEuler" ];then
-		sed -i "/^ExecStart=/c ExecStart=/usr/sbin/slapd -u ldap -h \"ldaps:/// ldapi:///\"" /usr/lib/systemd/system/slapd.service
-	fi
-	
-	systemctl restart slapd.service
-	netstat -anp | grep 636 | grep slapd
-	if [ $? -eq 0 ];then
-		log_info "The TLS/SSL has been integrated into the service order." true
-		systemctl daemon-reload
-	else
-		log_error "Failed to integrate TSL/SSL into the service order." true
-		exit 255
-	fi
+  chown ldap:ldap -R $cert_dir
+  cp $cert_dir/ldap.crt ${base_directory}/service_script
+
+  log_info "adding cert file..." true
+  sed -i "/^olcTLSCertificateFile/d" /etc/openldap/slapd.d/cn\=config.ldif
+  sed -i "/^olcTLSCertificateKeyFile/d" /etc/openldap/slapd.d/cn\=config.ldif
+  sed -i "/^olcAllows/d" /etc/openldap/slapd.d/cn\=config.ldif
+
+  echo "olcTLSCertificateFile: $cert_dir/ldap.crt" >>/etc/openldap/slapd.d/cn\=config.ldif
+  echo "olcTLSCertificateKeyFile: $cert_dir/ldap.key" >>/etc/openldap/slapd.d/cn\=config.ldif
+  echo "olcAllows: bind_v2" >>/etc/openldap/slapd.d/cn\=config.ldif
+
+  log_info "Changing the LDAP Startup Mode..." true
+  if [ $OS_TYPE = "CentOS" ] || [ $OS_TYPE = "Red Hat Enterprise Linux" ]; then
+      sed -i "/^SLAPD_URLS=/c SLAPD_URLS=\"ldapi:/// ldaps:///\"" /etc/sysconfig/slapd
+  elif [ $OS_TYPE = "Kylin" ] || [ $OS_TYPE = "openEuler" ]; then
+      sed -i "/^ExecStart=/c ExecStart=/usr/sbin/slapd -u ldap -h \"ldaps:/// ldapi:///\"" /usr/lib/systemd/system/slapd.service
+      systemctl daemon-reload
+  fi
+
+  log_info "========================= edit_ha_ldif_file ========================= " true
+  edit_ha_ldif_file
+  log_info "========================= edit_ha_ldif_file end ========================= " true
+
+  systemctl restart slapd.service
+  netstat -anp | grep 636 | grep slapd
+  if [ $? -eq 0 ]; then
+    log_info "TLS/SSL has been integrated into the service order." true
+  else
+    log_error "Failed to integrate TSL/SSL into the service order." true
+    exit_and_cleanENV 255
+  fi
 }
 
-function usage () {
-	cat << EOF
+function usage() {
+  cat <<EOF
 Usage:
 	e.g.: 
 	HA mode: ldap_deploy.sh -m 127.0.0.1 -s 127.0.0.2
@@ -639,43 +587,124 @@ Usage:
 EOF
 }
 
-function ldap_service_installation_and_deployment(){
-	if [ -n "$MASTER_IP" ] && [ -n "$SLAVE_IP" ] && [ -z "$NODE_PRI" ];then
-		ping -c2 -i0.3 -W1 $MASTER_IP
-		if [ $? != 0 ];then
-			log_error "Ping $MASTER_IP failed, The LDAP service installation is terminated." true
-			exit 255
-		fi
-		
-		ping -c2 -i0.3 -W1 $SLAVE_IP
-		if [ $? != 0 ];then
-			log_error "Ping $SLAVE_IP failed, The LDAP service installation is terminated." true
-			exit 255
-		fi
-		
-		if [ $IP_ADDR != $MASTER_IP ] && [ $IP_ADDR != $SLAVE_IP ];then
-			ssh_command "$MASTER_IP" "export NODE_PRI=master && sh ${base_directory}/service_script/$0" "$ROOT_LOGIN_PW"
-			ssh_command "$SLAVE_IP" "export NODE_PRI=slave && sh ${base_directory}/service_script/$0" "$ROOT_LOGIN_PW"
-			return 0
-		elif [ $IP_ADDR = $MASTER_IP ];then
-			export NODE_PRI=master
-		elif [ $IP_ADDR = $SLAVE_IP ];then
-			export NODE_PRI=slave
-		fi
-	elif [ -n "$MASTER_IP" ] && [ -z "$SLAVE_IP" ] && [ $IP_ADDR != $MASTER_IP ];then
-		ssh_command "$MASTER_IP" "sh ${base_directory}/service_script/$0" "$ROOT_LOGIN_PW"
-		exit 0
-	fi
-	selinux_firewall_check
-	deploy_ldap_service
-	ldap_database_conf
-	ldap_log_conf
-	if [ -n "$NODE_PRI" ];then
-		master_slave_trust_conf
-		failover_conf
-	fi
-	ssl_integration
+function remove_ldap() {
+  log_info "removing openldap-servers..." true
+  yum remove -y openldap-servers
+  rm -rf /var/lib/ldap
+  rm -rf /etc/openldap
+  rm -r /root/ldap.crt
+}
+
+
+function edit_ha_ldif_file() {
+    if [ $OS_TYPE = "CentOS" ] || [ $OS_TYPE = "Red Hat Enterprise Linux" ]; then
+        cat >$sync_path/sync-ha.ldif <<EOF
+dn: olcDatabase={2}hdb,cn=config
+changetype: modify
+replace: olcSyncRepl
+olcSyncRepl: rid=001
+             provider=ldaps://${ldap_master_ip}:636
+             bindmethod=simple
+             binddn="cn=root,dc=${array_dc[0]},dc=${array_dc[1]}"
+             credentials=${ldap_login_password}
+             searchbase="dc=${array_dc[0]},dc=${array_dc[1]}"
+             tls_reqcert=allow
+             scope=sub
+             schemachecking=on
+             type=refreshAndPersist
+             retry="30 5 300 3"
+             interval=00:00:05:0
+olcSyncrepl: rid=002
+             provider=ldaps://${ldap_slave_ip}:636
+             bindmethod=simple
+             binddn="cn=root,dc=${array_dc[0]},dc=${array_dc[1]}"
+             credentials=${ldap_login_password}
+             searchbase="dc=${array_dc[0]},dc=${array_dc[1]}"
+             tls_reqcert=allow
+             scope=sub
+             schemachecking=on
+             type=refreshAndPersist
+             retry="30 5 300 3"
+             interval=00:00:05:00
+-
+replace: olcMirrorMode
+olcMirrorMode: TRUE
+EOF
+    fi
+
+    if [ $OS_TYPE = "Kylin" ] || [ $OS_TYPE = "openEuler" ]; then
+        cat >$sync_path/sync-ha.ldif <<EOF
+dn: olcDatabase={2}mdb,cn=config
+changetype: modify
+replace: olcSyncRepl
+olcSyncRepl: rid=001
+             provider=ldaps://${ldap_master_ip}:636
+             bindmethod=simple
+             binddn="cn=root,dc=${array_dc[0]},dc=${array_dc[1]}"
+             credentials=${ldap_login_password}
+             searchbase="dc=${array_dc[0]},dc=${array_dc[1]}"
+             tls_reqcert=allow
+             scope=sub
+             schemachecking=on
+             type=refreshAndPersist
+             retry="30 5 300 3"
+             interval=00:00:05:0
+olcSyncrepl: rid=002
+             provider=ldaps://${ldap_slave_ip}:636
+             bindmethod=simple
+             binddn="cn=root,dc=${array_dc[0]},dc=${array_dc[1]}"
+             credentials=${ldap_login_password}
+             searchbase="dc=${array_dc[0]},dc=${array_dc[1]}"
+             tls_reqcert=allow
+             scope=sub
+             schemachecking=on
+             type=refreshAndPersist
+             retry="30 5 300 3"
+             interval=00:00:05:00
+-
+replace: olcMirrorMode
+olcMirrorMode: TRUE
+EOF
+    fi
+    ldapmodify -Y EXTERNAL -H ldapi:/// -f $sync_path/sync-ha.ldif
+    chown -R ldap:ldap /etc/openldap/slapd.d/
+    systemctl restart slapd.service
+}
+
+function ldap_service_installation_and_deployment() {
+    if [ -n "${ldap_master_ip}" ] && [ -n "${ldap_slave_ip}" ] && [ -z "$NODE_PRI" ]; then
+        ping -c2 -i0.3 -W1 ${ldap_master_ip}
+        if [ $? != 0 ]; then
+            log_error "Ping ${ldap_master_ip} failed, The LDAP service installation is terminated." true
+            exit_and_cleanENV 255
+        fi
+        ping -c2 -i0.3 -W1 ${ldap_slave_ip}
+        if [ $? != 0 ]; then
+            log_error "Ping ${ldap_slave_ip} failed, The LDAP service installation is terminated." true
+            exit_and_cleanENV 255
+        fi
+
+        ssh_command "${ldap_master_ip}" "export NODE_PRI=master && sh $0 ${root_dir}" "${root_login_password}" "true"
+        ssh_command "${ldap_slave_ip}" "export NODE_PRI=slave && sh $0 ${root_dir}" "${root_login_password}" "true"
+        return 0
+    # LDAP非HA且服务端不在当前运维节点
+    elif [ -n "${ldap_master_ip}" ] && [ -z "${ldap_slave_ip}" ] && [ $IP_ADDR != ${ldap_master_ip} ]; then
+        ssh_command "${ldap_master_ip}" "$0 ${root_dir}" "${root_login_password}"
+        return 0
+    fi
+    if [ "$(rpm -qa | grep ldap)" != "" ]; then
+        remove_ldap
+    fi
+    selinux_firewall_check
+    deploy_ldap_service
+    ldap_database_conf
+    ldap_log_conf
+    if [ -n "$NODE_PRI" ]; then
+        master_slave_trust_conf
+        # edit_ha_ldif_file
+        failover_conf
+    fi
+    ssl_integration
 }
 
 ldap_service_installation_and_deployment "$@"
-exit 0

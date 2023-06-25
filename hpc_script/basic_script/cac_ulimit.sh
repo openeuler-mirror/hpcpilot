@@ -57,7 +57,7 @@ function check_ulimit_result() {
 }
 
 # 配置操作系统ulimit
-function config_ulimit () {
+function config_ulimit() {
     # 检查ulimit配置文件是否存在，不存在则创建
     if [ ! -f "${ulimit_file}" ]; then
         touch ${ulimit_file}

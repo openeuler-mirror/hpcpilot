@@ -29,10 +29,6 @@ share_nfs_dir=$(get_ini_value basic_conf basic_share_storage_directory /share_nf
 current_ip_addr=$(get_current_host_ip)
 # 获取配置文件NFS共享存储IP地址
 share_nfs_ip=$(get_ini_value basic_conf basic_share_storage_ip)
-# nfs服务配置文件内容
-nfs_conf_content="${share_nfs_dir} *(rw,no_subtree_check,fsid=11,no_root_squash)\n"
-# 共享目录配置文件内容
-nfs_share_content="\n${share_nfs_ip}:${share_nfs_dir}      ${share_nfs_dir}       nfs       nolock       0     2"
 
 # 检查NFS安装部署是否正确
 function check_nfs() {
@@ -126,7 +122,7 @@ function config_auto_fstab() {
         sed -i /^[[:space:]]*$/d /etc/fstab
     fi
     # 2.组装NFS开机自启动配置内容
-    local new_fstab_config="\n${share_nfs_ip}:${share_nfs_dir} ${share_nfs_dir} nfs nolock 0 2"
+    local new_fstab_config="\n${share_nfs_ip}:${share_nfs_dir} ${share_hpc_dir} nfs nolock 0 2"
     # 3.获取NFS开机自启动原内容
     local old_fstab_config=$(tail /etc/fstab)
     # 4.为保险安全期间再次做判断

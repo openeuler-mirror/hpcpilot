@@ -22,7 +22,8 @@ else
 fi
 source ${base_directory}/common.sh ${root_dir}
 # 引用函数文件结束
-
+# 服务器节点ROOT登录密码
+root_login_password=$(get_ini_value service_conf common_sys_root_password)
 # 并发执行判断（不同窗口不能同时执行脚本[并发]）
 check_concurrent_execution
 if [ "$?" == "1" ]; then
@@ -93,6 +94,10 @@ function valid_ldap_server() {
     local ldap_server_ip=$(get_ini_value service_conf master_ldap_server_ip)
     local ldap_slave_ip=$(get_ini_value service_conf slave_ldap_server_ip)
     local ldap_virtual_ip=$(get_ini_value service_conf virtual_ldap_server_ip)
+    if [ "$(rpm -qa ansible)" == "" ]; then
+        log_error "Ansible is not installed or fails to be installed." true
+        error_tag=1
+    fi
     if [ -z "${ldap_server_ip}" ] || [ "$(valid_ip_address ${ldap_server_ip})" == "1" ]; then
         if [ -z "${ldap_server_ip}" ]; then
             log_error "Ip address of the ldap server is empty." true
@@ -132,6 +137,15 @@ function valid_ldap_client() {
         fi
         error_tag=1
     fi
+    # 检查服务端创建的ldap.crt证书是否存在
+    ssh_command "${ldap_server_ip}" "ls /etc/openldap/certs/ldap.crt" "${root_login_password}"
+    if [ "0" != "$?" ]; then
+      ssh_command "${ldap_server_ip}" "ls ${base_directory}/service_script/ldap.crt | grep ldap.crt" "${root_login_password}"
+      if [ "0" != "$?" ]; then
+            log_error "No ldap.crt certificate is generated on ldap server, ldap_server_ip = ${ldap_server_ip}" true
+            error_tag=1
+        fi
+    fi
     return ${error_tag}
 }
 
@@ -146,6 +160,36 @@ function valid_ntp_chrony() {
         else
             log_error "Ip address of the ntp or chrony server is invalid, server_ip = ${ntp_server_ip}" true
         fi
+        error_tag=1
+    fi
+    return ${error_tag}
+}
+
+# 校验挂载共享目录
+function valid_mount_storage() {
+    local error_tag=0
+    if [ "$(rpm -qa ansible)" == "" ]; then
+        log_error "Ansible is not installed or fails to be installed." true
+        error_tag=1
+    fi
+    local storage_ip=$(get_ini_value basic_conf basic_share_storage_ip)
+    if [ -z "${storage_ip}" ] || [ "$(valid_ip_address ${storage_ip})" == "1" ]; then
+        if [ -z "${storage_ip}" ]; then
+            log_error "Ip address of the storage is empty." true
+        else
+            log_error "Ip address of the storage is invalid, storage_ip = ${storage_ip}" true
+        fi
+        error_tag=1
+    fi
+    local storage_share_dir=$(get_ini_value basic_conf basic_share_storage_directory /share_nfs)
+    local share_dir=$(get_ini_value basic_conf basic_shared_directory /share)
+    if [ "${storage_ip}" == "${om_machine_ip}" ] && [ "${storage_share_dir}" == "${share_dir}" ]; then
+        log_error "Storage node and O&M node are on the same host, and the directory names must be different." true
+        error_tag=1
+    fi
+    # 检查所有节点是否具备安装NFS客户端条件
+    ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 2"
+    if [ "$?" != "0" ]; then
         error_tag=1
     fi
     return ${error_tag}
@@ -210,8 +254,9 @@ function basic_menu() {
             fi
             log_tips "Installing Configuration... it may take several minutes, please wait." true
             local mellanox_driver_name=$(find_file_by_path ${sourcecode_dir}/ MLNX_OFED_LINUX tgz)
+            test_ansible
             # 同步/root/.ssh/到其它所有节点
-            ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/root/.ssh/ dest=/root/.ssh/ mode=0600" -k
+            ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/root/.ssh/ dest=/root/.ssh/ mode=0600"
             # 脚本及依赖软件同步
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${base_directory}/ dest=${base_directory}/ mode=0755"
             if [ -d "${sourcecode_dir}/jq/" ] && [ -n "$(ls ${sourcecode_dir}/jq/)" ]; then
@@ -224,7 +269,11 @@ function basic_menu() {
             if [ -n "${tcsh_rpm}" ]; then
                 ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${tcsh_rpm} dest=${sourcecode_dir}/"
             fi
-            
+            # 安装LDAP服务端所需的依赖包
+            local migrationtools=$(find_file_by_path ${sourcecode_dir}/ migrationtools rpm)
+            if [ -n "${migrationtools}" ]; then
+                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${migrationtools} dest=${sourcecode_dir}/"
+            fi
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${mellanox_driver_name} dest=${sourcecode_dir}/"
             # 同步http-local.repo文件到其它节点配置yum client
             # 使用YUM网络源必须先要关闭防火墙
@@ -234,7 +283,7 @@ function basic_menu() {
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${base_directory}/http-local.repo dest=/etc/yum.repos.d/"
             ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "yum clean all && yum makecache"
             # YUM源挂载后检查并安装基础命令
-            ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir}"
+            ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 1"
             # 同步/etc/hosts文件到其它节点（先生成在同步）
             create_etc_hosts
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
@@ -262,11 +311,12 @@ function basic_menu() {
                 fi    
             done
         elif [ "${action_basic}" == "yum installation and configuration scripts." ]; then
+            test_ansible
             ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "mv -f /etc/yum.repos.d/* /etc/yum.repos.bak/"
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${base_directory}/http-local.repo dest=/etc/yum.repos.d/"
             ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "yum clean all && yum makecache" -t ${ansible_log_path}
             # YUM源挂载后检查并安装基础命令
-            ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir}"
+            ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 1"
             ansible_shell_stats
         elif [ "${action_basic}" == "ansible installation and configuration scripts." ]; then
             if [ -n "$(rpm -qa ansible)" ]; then
@@ -275,25 +325,32 @@ function basic_menu() {
                 ${base_directory}/basic_script/cas_ansible.sh false false ${root_dir} true
             fi
         elif [ "${action_basic}" == "hostname installation and configuration scripts." ]; then
+            test_ansible
             ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cac_hostname.sh false false ${root_dir} true" -t ${ansible_log_path}
             ansible_run_stats
         elif [ "${action_basic}" == "pass_free installation and configuration scripts." ]; then
+            test_ansible
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/root/.ssh/ dest=/root/.ssh/ mode=0600" -t ${ansible_log_path}
             ansible_copy_stats
         elif [ "${action_basic}" == "selinux installation and configuration scripts." ]; then
+            test_ansible
             ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cac_selinux.sh false false ${root_dir} true" -t ${ansible_log_path}
             ansible_run_stats
         elif [ "${action_basic}" == "firewall installation and configuration scripts." ]; then
+            test_ansible
             ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cac_firewall.sh false false ${root_dir} true" -t ${ansible_log_path}
             ansible_run_stats
         elif [ "${action_basic}" == "mellanox installation and configuration scripts." ]; then
             log_tips "Installing mellanox driver... it may take several minutes, please wait."
+            test_ansible
             ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cas_mellanox.sh false false ${root_dir} true" -t ${ansible_log_path}
             ansible_run_stats
         elif [ "${action_basic}" == "ulimit installation and configuration scripts." ]; then
+            test_ansible
             ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cac_ulimit.sh false false ${root_dir} true" -t ${ansible_log_path}
             ansible_run_stats
         elif [ "${action_basic}" == "/etc/hosts synchronize." ]; then
+            test_ansible
             create_etc_hosts
             ansible all -m copy -a "src=/etc/hosts dest=/etc/" -t ${ansible_log_path}
             ansible_copy_stats
@@ -309,21 +366,8 @@ function basic_menu() {
 
 # 基础服务选择菜单
 function service_menu() {
-    select action_ntp_ldap in "automatic ntp server and client script." "automatic ntp_server script." "automatic ntp_client script." "automatic chrony server and client script." "automatic chrony_server script." "automatic chrony_client script." "automatic ldap server and client script." "automatic ldap_server script." "automatic ldap_client script." "return to upper-level menu." "system exit."; do
-        if [ "${action_ntp_ldap}" == "automatic ntp server and client script." ]; then
-            valid_ntp_chrony
-            if [ "${?}" == "0" ]; then
-                ${base_directory}/service_script/install_ntp_server.sh ${root_dir}
-                ${base_directory}/service_script/install_ntp_client.sh ${root_dir}
-            fi
-        elif [ "${action_ntp_ldap}" == "automatic ntp_server script." ]; then
-            ${base_directory}/service_script/install_ntp_server.sh ${root_dir}
-        elif [ "${action_ntp_ldap}" == "automatic ntp_client script." ]; then
-            valid_ntp_chrony
-            if [ "${?}" == "0" ]; then
-                ${base_directory}/service_script/install_ntp_client.sh ${root_dir}
-            fi
-        elif [ "${action_ntp_ldap}" == "automatic chrony server and client script." ]; then
+    select action_ntp_ldap in "automatic chrony server and client script." "automatic chrony_server script." "automatic chrony_client script." "automatic ldap server and client script." "automatic ldap_server script." "automatic ldap_client script." "return to upper-level menu." "system exit."; do
+        if [ "${action_ntp_ldap}" == "automatic chrony server and client script." ]; then
             valid_ntp_chrony
             if [ "${?}" == "0" ]; then
                 ${base_directory}/service_script/install_chrony_server.sh ${root_dir}
@@ -342,17 +386,35 @@ function service_menu() {
         elif [ "${action_ntp_ldap}" == "automatic ldap server and client script." ]; then
             valid_ldap_server
             if [ "${?}" == "0" ]; then
-                ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+                ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 3"
+                if [ "$?" == "0" ]; then
+                  ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+                fi
+                log_info "Generate and update /etc/hosts file (domain name IP address mapping)." true
+                # 生成刷新/etc/hosts文件（域名IP映射）
+                create_etc_hosts
+                # 同步到其它节点
+                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
+                ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 4"
                 ${base_directory}/service_script/install_ldap_client.sh ${root_dir}
             fi
         elif [ "${action_ntp_ldap}" == "automatic ldap_server script." ]; then
             valid_ldap_server
             if [ "${?}" == "0" ]; then
-                ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+                ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 3"
+                if [ "$?" == "0" ]; then
+                  ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+                fi
+                log_info "Generate and update /etc/hosts file (domain name IP address mapping)." true
+                # 生成刷新/etc/hosts文件（域名IP映射）
+                create_etc_hosts
+                # 同步到其它节点
+                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
             fi
         elif [ "${action_ntp_ldap}" == "automatic ldap_client script." ]; then
             valid_ldap_client
             if [ "${?}" == "0" ]; then
+                ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 4"
                 ${base_directory}/service_script/install_ldap_client.sh ${root_dir}
             fi
         elif [ "${action_ntp_ldap}" == "return to upper-level menu." ]; then
@@ -403,9 +465,8 @@ function benchmark_menu() {
 function mount_storage_menu() {
     select action_mount in "auto run nfs client script." "return to upper-level menu." "system exit."; do
         if [ "${action_mount}" == "auto run nfs client script." ]; then
-            if [ "$(rpm -qa ansible)" == "" ]; then
-                log_error "Ansible is not installed or fails to be installed." true
-            else
+            valid_mount_storage
+            if [ "${?}" == "0" ]; then
                 ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cas_nfs.sh false false ${root_dir} true" -t ${ansible_log_path}
                 ansible_run_stats
             fi
@@ -423,14 +484,14 @@ function mount_storage_menu() {
 function main_menu() {
     # 手动选择需要执行的方法
     log_tips "Welcome to hpcpilot, please select the script to execute." true
-    select action in "auto run initialization script." "auto run operating system configuration script." "auto run mount storage device scripts." "auto run ntp(or chrony) ldap service installation script." "auto run donaukit users and directory script." "auto run benchmark tools and cuda toolkit installation scripts." "auto run check scripts." "system exit."; do
+    select action in "auto run initialization script." "auto run operating system configuration script." "auto run mount storage device scripts." "auto run chrony ldap service installation script." "auto run donaukit users and directory script." "auto run benchmark tools and cuda toolkit installation scripts." "auto run check scripts." "system exit."; do
         if [ "${action}" == "auto run initialization script." ]; then
             ${base_directory}/basic_script/auto_init_script.sh ${root_dir}
         elif [ "${action}" == "auto run operating system configuration script." ]; then
             basic_menu
         elif [ "${action}" == "auto run mount storage device scripts." ]; then
             mount_storage_menu
-        elif [ "${action}" == "auto run ntp(or chrony) ldap service installation script." ]; then
+        elif [ "${action}" == "auto run chrony ldap service installation script." ]; then
             service_menu
         elif [ "${action}" == "auto run donaukit users and directory script." ]; then
             local error_tag=0
@@ -447,11 +508,17 @@ function main_menu() {
                 # 运维节点创建规划目录
                 if [ "${ansible_group_name}" == "all" ] && [ "${share_dir}" != "/${root_dir}" ]; then
                     ${base_directory}/basic_script/cac_directory.sh false false ${root_dir} true
+                    #清理配置文件涉及到的密码
+                    modify_ini_value common_global_conf common_sys_user_password ""
+                    modify_ini_value common_global_conf common_sys_root_password ""
+                    modify_ini_value service_conf ldap_login_password ""
                     log_tips "Copying scripts to shared directory is in progress... do not interrupt." true
                     cp -r ${base_directory}/ ${share_dir}/software/tools/
                     cp -r ${sourcecode_dir}/ ${share_dir}/software/
                     # ansible all -m file -a "path=/${root_dir}/hpcpilot/ state=absent"
-                    log_tips "Scripts move completed, follow-up operations are performed in the shared directory." true
+                    log_tips "Scripts move completed, follow-up operations are performed in the shared directory." false
+                    # 在共享目录执行的提示，闪烁显示，以比较明确的提示用户
+                    echo -e "\033[5m Scripts move completed, follow-up operations are performed in the shared directory. Password is cleared\033[0m"
                     break
                 fi
             fi
@@ -467,6 +534,7 @@ function main_menu() {
                 log_error "Ansible is not installed or fails to be installed." true
             else
                 log_tips "Checking in progress... do not interrupt." true
+                test_ansible
                 ansible all -m shell -a "${base_directory}/basic_script/auto_check_script.sh ${root_dir}" -t ${ansible_log_path}
                 ansible_run_stats
             fi

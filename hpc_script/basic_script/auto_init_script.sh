@@ -36,7 +36,7 @@ function init_verify() {
     local current_os_info=($(cat /etc/system-release))
     ############### 遍历sourcecode文件夹中依赖软件或软件包都准备齐全 ###############
     if [ ! -d "${sourcecode_dir}" ]; then
-         echo -e "\033[49;31m current running scripts [${0}] does not [${sourcecode_dir}].\033[0m"
+         log_error "Current running scripts [${0}] does not [${sourcecode_dir}]." true
          return 1
     fi
     
@@ -51,12 +51,12 @@ function init_verify() {
             fi
         done
     else
-        echo -e "\033[31m [${sourcecode_dir}] directory is empty, operation cannot be performed.\033[0m"
+        log_error "[${sourcecode_dir}] directory is empty, operation cannot be performed." true
         return 1
     fi
     # 检查当前操作系统类型的ISO文件是否找到
     if [ "${current_os_yum_iso}" == "" ]; then
-        echo -e "\033[49;31m [${sourcecode_dir}] directory yum iso file does not exist.\033[0m"
+        log_error "[${sourcecode_dir}] directory yum iso file does not exist." true
         error_flag=1
     fi
     if [ "$(rpm -qa ansible)" == "" ]; then
@@ -66,22 +66,22 @@ function init_verify() {
             if [ "$(yum list | grep -F ansible)" == "" ]; then
                 # 使用本地安装方式安装(检查本地ANSIBLE文件是否存在)
                 if [ "$(find_file_by_path ${sourcecode_dir}/ansible ansible rpm)" == "" ]; then
-                    echo -e "\033[31m [${sourcecode_dir}/ansible] ansible installation files does not exist, system exit.\033[0m"
+                    log_error "[${sourcecode_dir}/ansible] ansible installation files does not exist, system exit." true
                     error_flag=1
                 fi
             fi
         fi
     fi
     if [ ! -f "${base_directory}/hostname.csv" ]; then
-        echo -e "\033[49;31m [${base_directory}/hostname.csv] file does not exist.\033[0m"
+        log_error "[${base_directory}/hostname.csv] file does not exist." true
         error_flag=1
     fi
     if [ ! -f "${base_directory}/setting.ini" ]; then
-        echo -e "\033[49;31m [${base_directory}/setting.ini] file does not exist.\033[0m"
+        log_error "[${base_directory}/setting.ini] file does not exist." true
         error_flag=1
     fi
     if [ ! -f "${base_directory}/users.json" ]; then
-        echo -e "\033[49;31m [${base_directory}/users.json] file does not exist.\033[0m"
+        log_error "[${base_directory}/users.json] file does not exist." true
         error_flag=1
     fi
     if [ "${error_flag}" == "1" ]; then
@@ -94,29 +94,32 @@ function main() {
     # 检查校验执行初始化脚本的合法性
     init_verify
     if [ "$?" == "1" ]; then
-        exit_and_cleanENV 1
+        return 1
     fi
     # 检查是否是扩容操作
     if [ "$(check_run_expansion)" == "0" ]; then
         # 在运维节点挂载本地YUM源
-        echo -e "\033[32m =============== begin to mount yum source to manage node ===============\033[0m"
+        log_info "Begin to mount yum source to O&M node" true
         mount_local_yum ${sourcecode_dir} ${base_directory}
         basic_commands_install
-        echo -e "\033[32m =============== finish to mount yum source to manage node ===============\033[0m"
+        log_info "Finish to mount yum source to O&M node" true
+        
         # 在运维节点安装ANSIBLE软件
-        echo -e "\033[32m =============== begin to setup and config ansible ===============\033[0m"
+        log_info "Begin to install and config ansible" true
         setup_and_config_ansible
-        echo -e "\033[32m =============== finish to setup and config ansible ===============\033[0m"
+        log_info "Finish to install and config ansible" true
+        
         # 在运维节点执行本地ssh-key
-        echo -e "\033[32m =============== begin to create local sshkey ===============\033[0m"
+        log_info "Begin to create local sshkey" true
         create_local_sshkey
-        echo -e "\033[32m =============== finish to create local sshkey ===============\033[0m"  
+        log_info "Finish to create local sshkey" true 
     fi
     # 刷新/etc/hosts和/etc/ansible/hosts
-    echo -e "\033[32m =============== begin to create /etc/hosts and /etc/ansible/hosts to manage node ===============\033[0m"
+    log_info "Begin to create /etc/hosts and /etc/ansible/hosts to O&M node" true
     create_ansible_hosts
     create_etc_hosts
-    echo -e "\033[32m =============== finish to create /etc/hosts and /etc/ansible/hosts to manage node ===============\033[0m"
+    log_info "Finish to create /etc/hosts and /etc/ansible/hosts to O&M node" true
 }
 
+# 主函数程序入口
 main

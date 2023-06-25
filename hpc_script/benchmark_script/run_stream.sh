@@ -27,7 +27,7 @@ if [ -f /sys/kernel/mm/transparent_hugepage/enabled ];then
     hugepage=$(cat /sys/kernel/mm/transparent_hugepage/enabled |grep -o '\[.*\]'|sed 's/\[//'|sed 's/\]//')
     if [ $hugepage != never ];then
 	echo never > /sys/kernel/mm/transparent_hugepage/enabled
-        $local_path/../tools/stream/stream_c.exe >> $stream_log_path/stream-$HOSTNAME.log
+        $local_path/../exec_tools/stream/stream_c.exe >> $stream_log_path/stream-$HOSTNAME.log
 	echo $hugepage > /sys/kernel/mm/transparent_hugepage/enabled
 	exit 0
     fi

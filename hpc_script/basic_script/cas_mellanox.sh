@@ -290,19 +290,19 @@ function required_check() {
         fi
         if [ -n "$(cat /etc/system-release | grep -i -w CentOS)" ]; then
             if [ -z "$(yum list | grep tcl)" ]; then
-                log_error "[${sourcecode_dir}/] tcl dependency package doesn't exist from yum source, please check." true
+                log_error "tcl dependency package doesn't exist from yum source, please check." true
                 return 1
             fi
             if [ -z "$(yum list | grep tk)" ]; then
-                log_error "[${sourcecode_dir}/] tk dependency package doesn't exist from yum source, please check." true
+                log_error "tk dependency package doesn't exist from yum source, please check." true
                 return 1
             fi
             if [ -z "$(yum list | grep pciutils)" ]; then
-                log_error "[${sourcecode_dir}/] pciutils dependency package doesn't exist from yum source, please check." true
+                log_error "pciutils dependency package doesn't exist from yum source, please check." true
                 return 1
             fi
             if [ -z "$(yum list | grep lsof)" ]; then
-                log_error "[${sourcecode_dir}/] lsof dependency package doesn't exist from yum source, please check." true
+                log_error "lsof dependency package doesn't exist from yum source, please check." true
                 return 1
             fi
         fi

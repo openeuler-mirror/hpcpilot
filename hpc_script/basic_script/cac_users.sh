@@ -5,7 +5,7 @@
 #!/usr/bin/env bash
 ######################################################################
 # 脚本描述：批量创建DonauKit产品操作帐号业务用户自动化脚本                     #
-# 注意事项：该脚本提供通过users.json文件和指定初始序列值两张方法创建，目前使用     #
+# 注意事项：该脚本提供通过users.json文件和指定初始序列值两种方法创建，目前使用     #
 #         users.json文件创建，初始序列值创建未启动。                        #
 ######################################################################
 # set -x
@@ -27,7 +27,7 @@ source ${base_directory}/common.sh ${3}
 # userid序列初始值
 user_id_init_sequence=$(get_ini_value basic_conf basic_userid_init_sequence 60000)
 # 定义需要创建的业务用户
-definition_business_users=(ccs_master ccs_agent ccs_ignite ccs_cli ccs_auth ccs_etcd postgres ccsuite hacluster ccp_master ccp_sysadmin ccp_secadmin ccp_audadmin hmpi_master hmpi_user)
+definition_business_users=(ccs_master ccs_agent ccs_ignite ccs_cli ccs_auth ccs_etcd postgres ccsuite ccp_master ccp_sysadmin ccp_secadmin ccp_audadmin hmpi_master hmpi_user)
 # users.json文件存放路径
 users_json_file=${base_directory}/users.json
 # 业务用户密码
@@ -223,10 +223,10 @@ function create_users_by_json() {
                     # 新增用户组
                     groupadd ${group_name[i]} -g ${group_id[i]}
                 else
-                    gid=$(egrep "^${group_name[i]}" /etc/group | gawk -F: '{print $3}') >&/dev/null
+                    local gid=$(egrep "^${group_name[i]}" /etc/group | gawk -F: '{print $3}') >&/dev/null
                     log_info "\${gid} = ${gid}" false
                     if [ "${gid}" != "${group_id[i]}" ]; then
-                        groupdel ${group_name[i]}
+                        groupdel -f ${group_name[i]}
                         groupadd ${group_name[i]} -g ${group_id[i]}
                     fi
                 fi
