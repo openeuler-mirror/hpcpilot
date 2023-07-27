@@ -16,7 +16,7 @@ else
     FDISPLAY="nogui"
 fi
 
-if [[ "${FLUENT_DAT}" = "Yes" ]];then
+if [[ "x${FLUENT_DAT}" != "x" ]];then
     DAT_FILE=$(basename $FLUENT_DAT)
 	echo "/file/rc
 ${CAS_FILE}
