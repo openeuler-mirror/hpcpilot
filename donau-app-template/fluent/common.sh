@@ -11,23 +11,22 @@ FLUENT_OUT="${FLUENT_OUTNAME}@${FLUENT_ITER}"
 
 if [[ "${VNC_DISPLAY_FLAG}" = "Yes" ]];then
     FDISPLAY="gui"
-	SYS_ENV="DISPLAY=${VNC_DISPLAY_FLAG}"
+    SYS_ENV="DISPLAY=${VNC_DISPLAY}"
 else
     FDISPLAY="nogui"
 fi
 
 if [[ "x${FLUENT_DAT}" != "x" ]];then
     DAT_FILE=$(basename $FLUENT_DAT)
-	echo "/file/rc
-${CAS_FILE}
-/file/rd
-${DAT_FILE}" > ${JOB_DIR}/fluent_script.jou
+	echo "/file/rc 
+	${CAS_FILE}
+	/file/rd ${DAT_FILE}" > ${JOB_DIR}/fluent_script.jou
 else
-     echo "/file/rc
-${CAS_FILE}" > ${JOB_DIR}/fluent_script.jou
+     echo "/file/rc ${CAS_FILE}" > ${JOB_DIR}/fluent_script.jou
 fi
 
-echo "/solve/iterate
+echo "/solve/initialize/initialize
+/solve/iterate
 ${FLUENT_ITER}
 /file/wcd
 ${FLUENT_OUT}
@@ -35,5 +34,5 @@ parallel/timer/usage
 exit
 yes" >> ${JOB_DIR}/fluent_script.jou
 
-SCRIPT_PATH="/home/wangyq/script/fluent.sh"
+SCRIPT_PATH="/share/software/script/app/fluent.sh"
 APP_CMD="${SCRIPT_PATH} ${FLUENT_DIMENSION} ${FDISPLAY} ${CPU_CORES}"
