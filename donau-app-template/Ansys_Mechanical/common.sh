@@ -3,5 +3,7 @@
 # Common functions for template.
 
 # Application running command.
-SCRIPT_PATH="/home/wangyq/script/ansys.sh"
+
+
+SCRIPT_PATH="/share/software/script/app/ansys.sh"
 APP_CMD="${SCRIPT_PATH} ${CPU_CORES} ${INPUT_FILE} ${OTHER_FILES}"

@@ -4,5 +4,5 @@
 
 # Application running command.
 
-SCRIPT_PATH="/share/software/scripts/app/abaqus.sh"
+SCRIPT_PATH="/share/software/script/app/abaqus.sh"
 APP_CMD="${SCRIPT_PATH} ${CPU_CORES} ${CASE_FILE}"
