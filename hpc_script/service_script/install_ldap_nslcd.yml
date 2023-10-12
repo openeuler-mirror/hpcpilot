@@ -1,9 +1,12 @@
 - name: install ldap cli
   hosts: "{{ hosts }}"
   gather_facts: False
+  vars:
+    ldap_server_ip: <ldap_server_ip>
+    ldap_login_password: <ldap_login_psd>
   tasks:
   - name: install services
-    shell: yum -y install openldap-clients nss-pam-ldapd authconfig sssd oddjob oddjob-mkhomedir migrationtools
+    shell: yum -y install nss-pam-ldapd pam_ldap openldap-clients oddjob oddjob-mkhomedir
   - name: mkdir cacerts
     shell: mkdir -p /etc/openldap/cacerts
   - name: copy ldap.crt
@@ -12,9 +15,6 @@
      dest: /etc/openldap/cacerts
   - name: chmod cacerts
     shell: chmod -R 755 /etc/openldap/cacerts
-  - name: touch ldap.conf
-    shell: touch /etc/openldap/ldap.conf
-    ignore_errors: yes
   - name: config ldap.conf
     blockinfile:
      dest: /etc/openldap/ldap.conf
@@ -25,38 +25,48 @@
       TLS_CACERT /etc/openldap/cacerts/ldap.crt
       URI ldaps://{{ ldap_server_ip }}
       SSL yes
-  - name: backup sssd.conf
-    shell: mv /etc/sssd/sssd.conf /etc/sssd/sssd.conf.bak
+  - name: chown nslcd.conf
+    shell: "chown root: /etc/nslcd.conf && chmod 600 /etc/nslcd.conf"
+  - name: config nslcd.conf uri
+    replace:
+     path: /etc/nslcd.conf
+     regexp: 'uri ldap://127.0.0.1/'
+     replace: '#uri ldap://127.0.0.1/'
     ignore_errors: yes
-  - name: touch sssd.conf
-    shell: touch /etc/sssd/sssd.conf
-  - name: config sssd.conf
+  - name: config nslcd.conf base
+    replace:
+     path: /etc/nslcd.conf
+     regexp: 'base dc=example,dc=com'
+     replace: '#base dc=example,dc=com'
+    ignore_errors: yes    
+  - name: config nslcd.conf
     blockinfile:
-     dest: /etc/sssd/sssd.conf
+     dest: /etc/nslcd.conf
      marker: "#{mark}config"
      block: |
-      [sssd]
-      config_file_version = 2
-      services = nss, pam
-      domains = LDAP
-      
-      [nss]
-      
-      [pam]
-      
-      [domain/LDAP]
-      id_provider = ldap
-      auth_provider = ldap
-      ldap_schema = rfc2307
-      ldap_uri = ldaps://{{ ldap_server_ip }}:636
-      ldap_search_base = {{ ldap_base_dc }}
-      enumerate = true
-      cache_credentials = true
-      ldap_id_use_start_tls = true
-      ldap_tls_cacertdir = /etc/openldap/cacerts
-      ldap_tls_reqcert = allow
-  - name: chmod sssd.conf
-    shell: chmod 600 /etc/sssd/sssd.conf -R
+      uri ldaps://{{ ldap_server_ip }}:636/
+      base {{ ldap_base_dc }}
+      ssl yes
+      tls_reqcert allow
+      tls_cacertdir /etc/openldap/cacerts
+      tls_cacert /etc/openldap/cacerts/ldap.crt
+      binddn cn=root,{{ ldap_base_dc }}
+      bindpw {{ ldap_login_password }}
+  - name: config nsswitch.conf passwd
+    replace:
+     path: /etc/nsswitch.conf
+     regexp: 'passwd:      sss files systemd'
+     replace: 'passwd: files  sss  ldap'
+  - name: config nsswitch.conf shadow
+    replace:
+     path: /etc/nsswitch.conf
+     regexp: 'shadow:     files sss'
+     replace: 'shadow: files  sss  ldap'
+  - name: config nsswitch.conf group
+    replace:
+     path: /etc/nsswitch.conf
+     regexp: 'group:       sss files systemd'
+     replace: 'group:  files  sss  ldap'     
   - name: backup system-auth
     shell: mv /etc/pam.d/system-auth /etc/pam.d/system-auth.bak && touch /etc/pam.d/system-auth
   - name: config system-auth
@@ -70,19 +80,19 @@
       auth        required      pam_env.so
       auth        required      pam_faildelay.so delay=2000000
       auth        sufficient    pam_unix.so nullok try_first_pass
-      auth        sufficient    pam_sss.so use_first_pass
+      auth        sufficient    pam_ldap.so use_first_pass
       auth        requisite     pam_succeed_if.so uid >= 1000 quiet_success
       auth        required      pam_deny.so
       
       account     required      pam_unix.so broken_shadow
       account     sufficient    pam_succeed_if.so uid < 1000 quiet
-      account     [default=bad success=ok user_unknown=ignore] pam_sss.so
+      account     [default=bad success=ok user_unknown=ignore] pam_ldap.so
       account     required      pam_permit.so
       account     required      pam_oddjob_mkhomedir.so umask=0077
       
       password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=
       password    sufficient    pam_unix.so md5 shadow nis nullok try_first_pass use_authtok
-      password    sufficient    pam_sss.so use_authtok
+      password    sufficient    pam_ldap.so use_authtok
       password    required      pam_deny.so
       
       session     optional      pam_keyinit.so revoke
@@ -91,7 +101,7 @@
       session     optional      pam_oddjob_mkhomedir.so umask=0077
       session     [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
       session     required      pam_unix.so
-      session     optional      pam_sss.so
+      session     optional      pam_ldap.so
   - name: backup password-auth
     shell: mv /etc/pam.d/password-auth /etc/pam.d/password-auth.bak && touch /etc/pam.d/password-auth
   - name: config password-auth
@@ -105,19 +115,19 @@
       auth        required      pam_env.so
       auth        required      pam_faildelay.so delay=2000000
       auth        sufficient    pam_unix.so nullok try_first_pass
-      auth        sufficient    pam_sss.so use_first_pass
+      auth        sufficient    pam_ldap.so use_first_pass
       auth        requisite     pam_succeed_if.so uid >= 1000 quiet_success
       auth        required      pam_deny.so
       
       account     required      pam_unix.so broken_shadow
       account     sufficient    pam_succeed_if.so uid < 1000 quiet
-      account     [default=bad success=ok user_unknown=ignore] pam_sss.so
+      account     [default=bad success=ok user_unknown=ignore] pam_ldap.so
       account     required      pam_permit.so
       account     required      pam_oddjob_mkhomedir.so umask=0077
       
       password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=
       password    sufficient    pam_unix.so md5 shadow nis nullok try_first_pass use_authtok
-      password    sufficient    pam_sss.so use_authtok
+      password    sufficient    pam_ldap.so use_authtok
       password    required      pam_deny.so
       
       session     optional      pam_keyinit.so revoke
@@ -126,8 +136,8 @@
       session     optional      pam_oddjob_mkhomedir.so umask=0077
       session     [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
       session     required      pam_unix.so
-      session     optional      pam_sss.so
-  - name: restart sssd
-    shell: systemctl enable sssd && systemctl restart sssd
+      session     optional      pam_ldap.so
+  - name: restart nslcd
+    shell: systemctl enable nslcd && systemctl restart nslcd
   - name: restart oddjobd
     shell: systemctl enable oddjobd && systemctl restart oddjobd

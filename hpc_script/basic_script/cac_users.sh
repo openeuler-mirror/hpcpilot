@@ -1,23 +1,101 @@
+#
+# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
+#
+
 #!/usr/bin/env bash
-# 批量创建业务用户自动化脚本
+######################################################################
+# 脚本描述：批量创建DonauKit产品操作帐号业务用户自动化脚本                     #
+# 注意事项：该脚本提供通过users.json文件和指定初始序列值两种方法创建，目前使用     #
+#         users.json文件创建，初始序列值创建未启动。                        #
+######################################################################
+# set -x
 
 # 引用公共函数文件开始
-source /${3}/software/tools/hpc_script/common.sh ${3}
+if [ "${3}" == "opt" ]; then
+    # 定义脚本文件、配置文件存放目录
+    base_directory=/${3}/hpcpilot/hpc_script
+    # 依赖软件存放路径[/opt/hpcpilot/sourcecode]
+    sourcecode_dir=/${3}/hpcpilot/sourcecode
+else
+    # 定义脚本文件、配置文件存放目录
+    base_directory=/${3}/software/tools/hpc_script
+    sourcecode_dir=/${3}/software/sourcecode
+fi
+source ${base_directory}/common.sh ${3}
 # 引用公共函数文件结束
 
-# 软件文件所在路径
-sourcecode_dir=$(get_sourcecode_dir)
+# userid序列初始值
+user_id_init_sequence=$(get_ini_value basic_conf basic_userid_init_sequence 60000)
+# 定义需要创建的业务用户
+definition_business_users=(ccs_master ccs_agent ccs_ignite ccs_cli ccs_auth ccs_etcd postgres ccsuite ccp_master ccp_sysadmin ccp_secadmin ccp_audadmin hmpi_master hmpi_user)
 # users.json文件存放路径
-users_json_file=$(get_ini_value basic_conf basic_shared_directory /share)/software/tools/hpc_script/users.json
+users_json_file=${base_directory}/users.json
 # 业务用户密码
 user_password=$(get_ini_value common_global_conf common_sys_user_password 'Huawei12#$123456')
 
-# 检查用户创建是否完整
-function check_users() {
+# 使用userid序列初始值创建业务用户
+function create_users_by_sequence() {
+    local user_group_id=${user_id_init_sequence}
+    local ccs_master_group_id
+    for (( i = 0; i < ${#definition_business_users[@]}; i++ )); do
+        local user_group_name=${definition_business_users[i]}
+        if [ "${user_group_name}" == "ccp_master" ]; then
+            # 因为ccs_master和ccp_master使用同一个groupid因此组名只创建一次
+            useradd -u ${user_group_id} -g ${ccs_master_group_id} -d /home/${user_group_name} ${user_group_name}
+            echo ${user_password} | sudo passwd --stdin ${user_group_name} >&/dev/null
+        else
+            if [ "${user_group_name}" == "ccs_master" ]; then
+                 ccs_master_group_id=${user_group_id}
+            fi
+            # 新增用户组
+            groupadd ${user_group_name} -g ${user_group_id}
+            # 新增用户
+            useradd -u ${user_group_id} -g ${user_group_id} -d /home/${user_group_name} ${user_group_name}
+            echo ${user_password} | sudo passwd --stdin ${user_group_name} >&/dev/null
+        fi
+        user_group_id=$((${user_group_id}+1))
+    done
+    log_info "DonauKit product operation account has been created completely." false
+}
+
+# 检查业务用户创建是否正常是否完整
+# 该方法提供给使用序列创建的用户检查方法
+# 注意：目前未使用
+function check_users_by_sequence() {
+    # 记录未创建的用户名称
+    local uncreated_users
+    for (( i = 0; i < ${#definition_business_users[@]}; i++ )); do
+        local user_group_name=${definition_business_users[i]}
+        if [ -z "$(egrep ${user_group_name} /etc/passwd)" ]; then
+            uncreated_users="${uncreated_users}${user_group_name}\n"
+        fi
+    done
+    echo ${uncreated_users}
+}
+
+# 检查业务用户创建是否正常是否完整
+# 该方法提供给使用序列创建的用户检查结果
+# 注意：目前未使用
+function check_sequence_users_result() {
+    echo -e ""
+    echo -e "\033[33m==================[12]计算节点批量创建用户检查============================\033[0m"
+    return_msg=$(check_users_by_sequence)
+    if [ -z "${return_msg}" ]; then
+        echo -e "\033[33m==\033[0m\033[32m  计算节点批量创建用户检查正常                         [ √ ]\033[0m          \033[33m==\033[0m"
+    else
+        echo -e "\033[33m==\033[0m\033[31m  计算节点批量创建用户检查异常,异常用户如下:           [ X ]\033[0m          \033[33m==\033[0m"
+        echo -e "${return_msg}"
+    fi
+    echo -e "\033[33m==================[12]计算节点批量创建用户检查============================\033[0m"
+}
+
+# 检查业务用户创建是否正常是否完整
+# 用户使用的是users.json文件创建，依赖JQ组件
+function check_users_by_json() {
     # users.json配置文件是否存在
-    ret_user_json_code=0
+    local ret_user_json_code=0
     # users.json配置文件存在为空的配置项
-    ret_json_content_code=""
+    local ret_json_content_code=""
     if [ "$(is_file_exist ${users_json_file})" == "1" ]; then
         ret_user_json_code=1
     else
@@ -65,10 +143,10 @@ function check_users() {
     echo ${ret_json_content_code[@]}
 }
 
-function check_users_result() {
+function check_json_users_result() {
     echo -e ""
-    echo -e "\033[33m==================[13]计算节点批量创建用户检查============================\033[0m"
-    return_msg=$(check_users)
+    echo -e "\033[33m==================[12]计算节点批量创建用户检查============================\033[0m"
+    return_msg=$(check_users_by_json)
     if [ "$(is_file_exist ${users_json_file})" == "0" ]; then
         echo -e "\033[33m==\033[0m\033[32m  配置文件[users.json]存在                             [ √ ]\033[0m          \033[33m==\033[0m"
         if [ -z "${return_msg}" ]; then
@@ -80,55 +158,52 @@ function check_users_result() {
     else
         echo -e "\033[33m==\033[0m\033[31m  配置文件[users.json]不存在                           [ X ]\033[0m          \033[33m==\033[0m"
     fi
-    echo -e "\033[33m==================[13]计算节点批量创建用户检查============================\033[0m"
+    echo -e "\033[33m==================[12]计算节点批量创建用户检查============================\033[0m"
 }
 
 # 根据不同操作系统安装不同的JQ
-function install_jq_libs() {
+function install_jq() {
     # 安装麒麟操作系统软件以及依赖包
-    if [ -n "$(cat /etc/system-release | grep -i Kylin)" ]; then
+    if [ -n "$(cat /etc/system-release | grep -i -w Kylin)" ]; then
         cd ${sourcecode_dir}/jq
-        local jq_rpm=$(find_file_by_path ${sourcecode_dir}/jq jq-1.5 rpm)
-        if [ -z "${jq_rpm}" ]; then
-            log_error "$(get_current_host_info)_jq dependency package does not exist, couldn't install jq." false
+        if [ -z "$(find_file_by_path ${sourcecode_dir}/jq jq-1.5 rpm)" ]; then
+            log_error "Jq dependency package doesn't exist, couldn't install jq." false
             return 1
         else
-            yum localinstall -y *.rpm
+            yum localinstall -y *.rpm >> ${operation_log_path}/access_all.log 2>&1
             return 0
         fi
     fi
     # 安装欧拉操作系统jq软件以及依赖包
-    if [ -n "$(cat /etc/system-release | grep -i openEuler)" ]; then
-        yum install -y jq
+    if [ -n "$(cat /etc/system-release | grep -i -w openEuler)" ]; then
+        yum install -y jq >> ${operation_log_path}/access_all.log 2>&1
         return 0
     fi
     # 安装CentOS操作系统jq软件以及依赖包
-    if [ -n "$(cat /etc/system-release | grep -i CentOS)" ]; then
+    if [ -n "$(cat /etc/system-release | grep "CentOS Linux release 7.6.1810")" ]; then
         cd ${sourcecode_dir}/jq
-        local jq_rpm=$(find_file_by_path ${sourcecode_dir}/jq jq-1.5 rpm)
-        if [ -z "${jq_rpm}" ]; then
-            log_error "$(get_current_host_info)_jq dependency package does not exist, couldn't install jq." false
+        if [ -z "$(find_file_by_path ${sourcecode_dir}/jq jq-1.5 rpm)" ]; then
+            log_error "Jq dependency package doesn't exist, couldn't install jq." false
             return 1
         else
-            yum localinstall -y *.rpm
+            yum localinstall -y *.rpm >> ${operation_log_path}/access_all.log 2>&1
             return 0
+        fi
+    fi
+    if [ -n "$(cat /etc/system-release | grep "CentOS Linux release 8.2.2004")" ]; then
+        if [ -n "$(yum list | grep jq)" ]; then
+            yum install -y jq >> ${operation_log_path}/access_all.log 2>&1
+        else
+            log_error "Jq dependency package doesn't exist, couldn't install jq." false
+            return 1
         fi
     fi
 }
 
 # 创建用户
-function create_users() {
+function create_users_by_json() {
     # users.json配置文件是否存在
     local ret_user_json_code=0
-    # 检查安装jq JSON处理服务
-    if [ "$(rpm -qa jq)" == "" ]; then
-        install_jq_libs
-        if [ "$?" == "1" ]; then
-            ret_user_json_code=3
-            return 3
-        fi
-    fi
-    
     # 检查文件是否存在
     if [ "$(is_file_exist ${users_json_file})" == "0" ]; then
         # 获取business_users节点的用户信息 | .user_name,.user_id' sed -n "N;s/\n/ /p
@@ -148,26 +223,25 @@ function create_users() {
                     # 新增用户组
                     groupadd ${group_name[i]} -g ${group_id[i]}
                 else
-                    gid=$(egrep "^${group_name[i]}" /etc/group | gawk -F: '{print $3}') >&/dev/null
+                    local gid=$(egrep "^${group_name[i]}" /etc/group | gawk -F: '{print $3}') >&/dev/null
                     log_info "\${gid} = ${gid}" false
                     if [ "${gid}" != "${group_id[i]}" ]; then
-                        groupdel ${group_name[i]}
+                        groupdel -f ${group_name[i]}
                         groupadd ${group_name[i]} -g ${group_id[i]}
                     fi
                 fi
-    
                 # 检查并创建用户
                 egrep "^${user_name[i]}" /etc/passwd >&/dev/null
                 if [ $? -ne 0 ]; then
                     useradd -u ${user_id[i]} -g ${group_id[i]} -d /home/${user_name[i]} ${user_name[i]}
-                    echo ${cons_user_pwd} | sudo passwd --stdin ${user_name[i]} >&/dev/null
+                    echo ${user_password} | sudo passwd --stdin ${user_name[i]} >&/dev/null
                 else
                     # 强制将某个用户直接设置到对应的组
                     usermod -G ${group_name[i]} ${user_name[i]}
                 fi
             done
         else
-            log_error "jq parsing ${users_json_file} error, check whether the configuration is correct." false
+            log_error "Jq parsing ${users_json_file} error, checking configuration is correct." false
             ret_user_json_code=2
         fi
     else
@@ -180,13 +254,13 @@ function create_users_result() {
     echo -e ""
     echo -e "\033[33m==================[13]计算节点批量创建用户开始============================\033[0m"
     # 调用创建用户方法
-    create_users
+    create_users_by_json
+    # create_users_by_sequence
     if [ "$?" == "3" ]; then
          echo -e "\033[33m==\033[0m\033[31m  解析[users.json]文件jq的软件不存在                   [ X ]\033[0m          \033[33m==\033[0m"
     else
         # 检查用户创建
-        return_msg=$(check_users)
-
+        local return_msg=$(check_users_by_json)
         if [ "$(is_file_exist ${users_json_file})" == "0" ]; then
             echo -e "\033[33m==\033[0m\033[32m  配置文件[users.json]存在                             [ √ ]\033[0m          \033[33m==\033[0m"
             if [ -z "${return_msg}" ]; then
@@ -205,14 +279,14 @@ function create_users_result() {
 # 脚本执行合法性检查
 function required_check() {
     if [ $(is_file_exist ${users_json_file}) == "1" ]; then
-        echo -e "\033[31m [${users_json_file}] file does not exist, system exit.\033[0m"
+        log_error "[${users_json_file}] file doesn't exist, please check." true
         return 1
     fi
     # 检查jq依赖工具是否安装
     if [ "$(rpm -qa jq)" == "" ]; then
-        install_jq_libs
+        install_jq
         if [ "$?" == "1" ]; then
-            echo -e "\033[31m jq dependency package does not exist, system exit.\033[0m"
+            log_error "Jq dependency package doesn't exist, please check."
             return 1
         fi
     fi
@@ -221,6 +295,8 @@ function required_check() {
 ############### 主函数入口 ###############
 # 参数${1}表示手动执行脚本还是自动执行脚本方式
 # 参数${2}是否开启DEBUG模式
+# 参数${3}脚本所在的根目录（share workspace）
+# 参数${4}批量执行标识(true or false)
 is_manual_script=${1}
 is_open_debug=${2}
 if [ -z "${is_manual_script}" ]; then
@@ -229,4 +305,4 @@ fi
 if [ -z "${is_open_debug}" ]; then
     is_open_debug=false
 fi
-manual_script_action ${is_manual_script} ${is_open_debug} required_check check_users_result create_users_result
+manual_script_action ${is_manual_script} ${is_open_debug} required_check check_json_users_result create_users_result ${4}

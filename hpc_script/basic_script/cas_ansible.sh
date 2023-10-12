@@ -1,147 +1,31 @@
+#
+# Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
+#
 #!/usr/bin/env bash
-# 安装ANSIBLE自动化配置管理工具自动化脚本
+######################################################################
+# 脚本描述：安装ANSIBLE自动化配置管理工具自动化脚本                           #
+# 注意事项：只在运维节点安装ANSIBLE                                       #
+######################################################################
+# set -x
 
 # 引用公共函数文件开始
-source /${3}/software/tools/hpc_script/common.sh ${3}
+if [ "${3}" == "opt" ]; then
+    # 定义脚本文件、配置文件存放目录
+    base_directory=/${3}/hpcpilot/hpc_script
+    # 依赖软件存放路径[/opt/hpcpilot/sourcecode]
+    sourcecode_dir=/${3}/hpcpilot/sourcecode
+else
+    # 定义脚本文件、配置文件存放目录
+    base_directory=/${3}/software/tools/hpc_script
+    sourcecode_dir=/${3}/software/sourcecode
+fi
+source ${base_directory}/common.sh ${3}
 # 引用公共函数文件结束
 
-# 软件存放路径地址
-sourcecode_dir=$(get_sourcecode_dir)
-# 配置文件路径
-hostname_file=$(get_ini_value basic_conf basic_shared_directory /share)/software/tools/hpc_script/hostname.csv
-# 获取运维节点机器IP地址
-is_om_machine=$(get_ini_value basic_conf basic_om_master_ip)
-# 获取IP分组信息
-ip_group_array=($(get_ini_value basic_conf basic_node_ip_group))
 # 当前主机IP地址
 current_ip_addr=$(get_current_host_ip)
 # ansible版本号
 ansible_version=""
-# 计算节点用户名root密码
-ssh_user_password=$(get_ini_value common_global_conf common_sys_root_password "huawei@123")
-
-# 读取文件并生成/etc/hosts文件
-function create_etc_hosts() {
-    if [ "$(is_file_exist ${hostname_file})" == "0" ]; then
-        local hosts_content="127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4\n::1         localhost localhost.localdomain localhost6 localhost6.localdomain6\n"
-        # tail -n +2 从第二行开始读取数据，第一行为标题行
-        for line in $(cat ${hostname_file} | tail -n +2); do
-            # 检查判断字符串长度是否为0
-            if [ -n "${line}" ]; then
-                local file_host_ip=$(echo ${line} | awk -F "," '{print $1}')
-                local file_host_name=$(echo ${line} | awk -F "," '{print $2}')
-                hosts_content="${hosts_content}${file_host_ip} ${file_host_name}\n"
-            fi
-        done
-        # 覆盖写入/etc/hosts文件
-        echo -ne "${hosts_content}" >/etc/hosts
-    else
-        log_error "$(get_current_host_info)_${hostname_file} file doesn't exist." false
-    fi
-}
-
-# 读取文件并进行写入ansible host配置文件
-function read_hostname_file() {
-    if [ "$(is_file_exist ${hostname_file})" == "0" ]; then
-        # TODO 20230307_如需有时间则将下面变量改为动态获取，目前由于技术原因无法实现。
-        local ccsccp=""
-        local agent_ip=""
-        local scheduler_ip=""
-        local portal_ip=""
-        local cli_ip=""
-        local ntp_server_ip=""
-        local ntp_client_ip=""
-        local ldap_client_ip=""
-        # tail -n +2 从第二行开始读取数据，第一行为标题行
-        for line in $(cat ${hostname_file} | tail -n +2); do
-            # 检查判断字符串长度是否为0
-            if [ -n "${line}" ]; then
-                local file_host_ip=$(echo ${line} | awk -F "," '{print $1}')
-                # 剔除OM运维节点IP地址
-                if [ "${file_host_ip}" != "${is_om_machine}" ]; then
-                    local group_name="$(echo ${line} | awk -F "," '{print $3}')"
-                    if [ -n "${group_name}" ]; then
-                        if [[ "${group_name}" =~ "csp" ]]; then
-                            if [ -z "${ccsccp}" ]; then
-                                ccsccp="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                ccsccp="${ccsccp}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi
-                        if [[ "${group_name}" =~ "agent" ]]; then
-                            if [ -z "${agent_ip}" ]; then
-                                agent_ip="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                agent_ip="${agent_ip}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi
-                        if [[ "${group_name}" =~ "ccs" ]]; then
-                            if [ -z "${scheduler_ip}" ]; then
-                                scheduler_ip="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                scheduler_ip="${scheduler_ip}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi
-                        if [[ "${group_name}" =~ "ccp" ]]; then
-                            if [ -z "${portal_ip}" ]; then
-                                portal_ip="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                portal_ip="${portal_ip}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi
-                        if [[ "${group_name}" =~ "cli" ]]; then
-                            if [ -z "${cli_ip}" ]; then
-                                cli_ip="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                cli_ip="${cli_ip}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi
-                        if [[ "${group_name}" =~ "ntp_server" ]]; then
-                            if [ -z "${ntp_server_ip}" ]; then
-                                ntp_server_ip="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                ntp_server_ip="${ntp_server_ip}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi
-                        if [[ "${group_name}" =~ "ntp_client" ]]; then
-                            if [ -z "${ntp_client_ip}" ]; then
-                                ntp_client_ip="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                ntp_client_ip="${ntp_client_ip}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi   
-                        if [[ "${group_name}" =~ "ldap_client" ]]; then
-                            if [ -z "${ldap_client_ip}" ]; then
-                                ldap_client_ip="$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            else
-                                ldap_client_ip="${ldap_client_ip}\n$(echo ${line} | awk -F "," '{print $1}') ansible_ssh_user=root ansible_ssh_pass=${ssh_user_password}"
-                            fi
-                        fi
-                    fi  
-                fi
-            fi
-        done
-        # 追加写入/etc/ansible/hosts文件
-        echo -ne "[ccsccp]\n" >>/etc/ansible/hosts
-        echo -ne "${ccsccp}" >>/etc/ansible/hosts
-        echo -ne "\n[agent]\n" >>/etc/ansible/hosts
-        echo -ne "${agent_ip}" >>/etc/ansible/hosts
-        echo -ne "\n[scheduler]\n" >>/etc/ansible/hosts
-        echo -ne "${scheduler_ip}" >>/etc/ansible/hosts
-        echo -ne "\n[portal]\n" >>/etc/ansible/hosts
-        echo -ne "${portal_ip}" >>/etc/ansible/hosts
-        echo -ne "\n[cli]\n" >>/etc/ansible/hosts
-        echo -ne "${cli_ip}" >>/etc/ansible/hosts
-        echo -ne "\n[ntp_server]\n" >>/etc/ansible/hosts
-        echo -ne "${ntp_server_ip}" >>/etc/ansible/hosts
-        echo -ne "\n[ntp_client]\n" >>/etc/ansible/hosts
-        echo -ne "${ntp_client_ip}" >>/etc/ansible/hosts
-        echo -ne "\n[ldap_client]\n" >>/etc/ansible/hosts
-        echo -ne "${ldap_client_ip}" >>/etc/ansible/hosts
-    else
-        log_error "$(get_current_host_info)_${hostname_file} file doesn't exist." false
-    fi
-}
 
 # 检查ansible安装配置是否OK
 function check_setup_ansible() {
@@ -149,7 +33,7 @@ function check_setup_ansible() {
     local ret_cfg_code="0"
     local ret_host_code="0"
     local is_install_succeed=$(rpm -qa ansible)
-    if [ "${is_om_machine}" == "${current_ip_addr}" ]; then
+    if [ -n "$(echo "${current_ip_addr}" | grep "${om_machine_ip}")" ]; then
         if [ "${is_install_succeed}" == "" ]; then
             ret_install_code="1"
             echo ${ret_install_code}
@@ -159,15 +43,13 @@ function check_setup_ansible() {
             if [ "${result}" != "" ]; then
                 ret_cfg_code="1"
             fi
-            # 检查host文件配置是否正确
-            # TODO 20230112_目前ansible host文件配置检查简单，后续深入优化
-            local result1=$(cat /etc/ansible/hosts | grep -w "ccsccp")
-            if [ "${result1}" == "" ]; then
+            # 检查host文件配置是否存在
+            if [ "$(is_file_exist /etc/ansible/hosts)" == "1" ]; then
                 ret_host_code="1"
             fi
             # 获取ansible版本号
+            cd /etc/ansible/
             ansible_version=$(ansible --version | awk '{print $2}'  | sed -n '1P')
-            
             local ret_info=(${ret_install_code} ${ret_cfg_code} ${ret_host_code})
             echo ${ret_info[@]}  
         fi
@@ -182,9 +64,10 @@ function check_setup_ansible_result() {
     echo -e ""
     echo -e "\033[33m==================[2]ANSIBLE安装检查结果==================================\033[0m"
     local return_msg=($(check_setup_ansible))
-    if [ "${is_om_machine}" == "${current_ip_addr}" ]; then
+    if [ -n "$(echo "${current_ip_addr}" | grep "${om_machine_ip}")" ]; then
         # 运维节点检查结果显示
         if [ "${return_msg[0]}" == "0" ]; then
+            cd /etc/ansible/
             echo -e "\033[33m==\033[0m\033[32m  ANSIBLE安装检查结果正常                              [ √ ]\033[0m          \033[33m==\033[0m"
             echo -e "\033[33m==\033[0m\033[32m  ANSIBLE软件当前版本为：$(ansible --version | awk '{print $2}'  | sed -n '1P')\033[0m                                        \033[33m==\033[0m"
             if [ "${return_msg[1]}" == "0" ]; then
@@ -235,39 +118,44 @@ function find_ansible_file() {
 function setup_and_config_ansible() {
     # 判断当前机器是否是运维节点
     local ansible_file_name=""
-    if [ "${is_om_machine}" == "${current_ip_addr}" ]; then
-        # 检查ANSIBLE是否已安装，已安装先卸载
+    if [ -n "$(echo "${current_ip_addr}" | grep "${om_machine_ip}")" ]; then
         if [ "$(rpm -qa ansible)" != "" ]; then
-            yum remove -y ansible &>/dev/null
-        fi
-        # 安装ANSIBLE
-        if [ "$(yum list | grep ansible)" == "" ]; then
-            # 使用本地安装方式安装
-            cd ${sourcecode_dir}/ansible/
-            if [ "$(find_ansible_file)" != "" ]; then
-                # 目前本地安装支持 1.麒麟V10_ARM64版本、2.CENTOS7.6_ARM64版本
-                yum localinstall -y *.rpm &>/dev/null
-            else
-                log_error "$(get_current_host_info)_[${sourcecode_dir}/ansible/] the ansible file is not found." false
-            fi
+            log_info "Ansible has been installed and does not need to be installed again." true
         else
+            # 安装ANSIBLE
             # 使用YUM源安装，当前只适用欧拉系统
-            yum install -y ansible 1>/dev/null 2>/dev/null
+            if [ -n "$(cat /etc/system-release | grep -i -w openEuler)" ]; then
+                yum install -y ansible >> ${operation_log_path}/access_all.log 2>&1
+            else
+                # 其他系统仅支持本地安装 1.麒麟V10_ARM64版本、2.CENTOS7.6_ARM64版本 2.CENTOS8.2_ARM64版本
+                cd ${sourcecode_dir}/ansible/
+                if [ "$(find_ansible_file)" != "" ]; then
+                    yum localinstall -y *.rpm >> ${operation_log_path}/access_all.log 2>&1
+                    if [ -n "$(cat /etc/system-release | grep "CentOS Linux release 8.2.2004")" ]; then
+                        cd /etc/ansible/
+                        ansible-config init --disabled -t all > ansible.cfg
+                    fi
+                else
+                    log_error "[${sourcecode_dir}/ansible/] ansible files doesn't exist." true
+                fi
+            fi
+            # 检查安装是否成功
+            cd /etc/ansible/
+            if [ "$(ansible --version)" != "" ]; then
+                ansible_version=$(ansible --version | awk '{print $2}'  | sed -n '1P')
+                log_info "Ansible service installation succeeded." true
+            fi
+            # 找到host_key_checking = False取消注释。该步骤为取消主机间初次ssh跳转的人机交互。
+            remove_match_line_symbol /etc/ansible/ansible.cfg host_key_checking
+            # 找到command_warnings = False取消注释。该步骤可以减少一些无效的告警信息打印
+            remove_match_line_symbol /etc/ansible/ansible.cfg command_warnings
         fi
-        # 检查安装是否成功
-        if [ "$(ansible --version)" != "" ]; then
-            ansible_version=$(ansible --version | awk '{print $2}'  | sed -n '1P')
-            log_info "$(get_current_host_info)_ansible service installation succeeded." false
-        fi
-        ############## 进行ansible配置 ##############
-        # 1.找到host_key_checking = False取消注释。该步骤为取消主机间初次ssh跳转的人机交互。
-        remove_match_line_symbol /etc/ansible/ansible.cfg host_key_checking
-        # 2.按照需要将目标节点ip分配到不同的组，写入文件（支持正则）
-        read_hostname_file
-        # TODO 20230119_需要提供ANSIBLE验证是否配置成功的方法
+        # remove_match_line_symbol /etc/ansible/ansible.cfg forks
+        remove_match_line_symbol /etc/ansible/ansible.cfg forks
+        # 读取并设置ansible并发数
+        local forks_num=$(get_ini_value basic_conf basic_ansible_forks 5)
+        sed -i "s/forks.*/forks           = $forks_num/" /etc/ansible/ansible.cfg
     fi
-    # 按照需要将目标节点ip和hostname写入到/etc/hosts文件中
-    create_etc_hosts
 }
 
 # ANSIBLE安装部署结果输出打印
@@ -276,51 +164,36 @@ function setup_and_config_ansible_result() {
     echo -e "\033[33m==================[2]ANSIBLE安装部署开始==================================\033[0m"
     # 调用安装配置ANSIBLE方法
     setup_and_config_ansible
+    # 刷新/etc/hosts和/etc/ansible/hosts
+    create_ansible_hosts
+    create_etc_hosts
     # 调用ANSIBLE检查的方法
-    local return_msg=($(check_setup_ansible))
-    if [ "${is_om_machine}" == "${current_ip_addr}" ]; then
-        # 运维节点安装检查结果
-        if [ "${return_msg[0]}" == "0" ]; then
-            echo -e "\033[33m==\033[0m\033[32m  ANSIBLE安装部署成功                                  [ √ ]\033[0m          \033[33m==\033[0m"
-            echo -e "\033[33m==\033[0m\033[32m  ANSIBLE软件当前版本为：${ansible_version}\033[0m                                        \033[33m==\033[0m"
-            if [ "${return_msg[1]}" == "0" ]; then
-                echo -e "\033[33m==\033[0m\033[32m  [/etc/ansible/ansible.cfg]文件配置正确               [ √ ]\033[0m          \033[33m==\033[0m"
-            else
-                echo -e "\033[33m==\033[0m\033[31m  [/etc/ansible/ansible.cfg]文件未配置或配置不正确     [ X ]\033[0m          \033[33m==\033[0m"
-            fi
-            if [ "${return_msg[2]}" == "0" ]; then
-                echo -e "\033[33m==\033[0m\033[32m  [/etc/ansible/hosts]文件配置正确                     [ √ ]\033[0m          \033[33m==\033[0m"
-            else
-                echo -e "\033[33m==\033[0m\033[31m  [/etc/ansible/hosts]文件未配置或配置不正确           [ X ]\033[0m          \033[33m==\033[0m"
-            fi
-        else
-            echo -e "\033[33m==\033[0m\033[31m  ANSIBLE安装部署失败                                  [ X ]\033[0m          \033[33m==\033[0m"
-        fi
-    else
-        # 非运维节点安装检查结果
-        echo -e "\033[33m==\033[0m\033[32m  非运维节点无需安装ANSIBLE软件                        [ √ ]\033[0m          \033[33m==\033[0m"
-    fi
-    echo -e "\033[33m==================[2]ANSIBLE安装部署结束==================================\033[0m"
+    check_setup_ansible_result
 }
 
 # 脚本执行合法性检查
 function required_check() {
     # 运维节点OM配置检查
-    if [ -z "${is_om_machine}" ]; then
-        echo -e "\033[31m ip address of the om node is not configured, system exit.\033[0m"
+    if [ -z "${om_machine_ip}" ]; then
+        log_error "Ip address of O&M node is not configured, please check." true
         return 1
     fi
     # 检查ANSIBLE是否可以安装
-    if [ "${is_om_machine}" == "${current_ip_addr}" ]; then
+    if [ -n "$(echo "${current_ip_addr}" | grep "${om_machine_ip}")" ]; then
         if [ $(is_file_exist ${hostname_file}) == "1" ]; then
-            echo -e "\033[31m [${hostname_file}] file does not exist, system exit.\033[0m"
+            log_error "[${hostname_file}] file doesn't exist, please check." true
             return 1
         fi
         if [ "$(rpm -qa ansible)" == "" ]; then
-            if [ "$(yum list | grep ansible)" == "" ]; then
+            yum list 1>/dev/null 2>/dev/null
+            # 如果未配置yum源不做ansible安装文件检查
+            if [ $? -eq 1 ]; then
+                return 0
+            fi
+            if [ "$(yum list | grep -F ansible)" == "" ]; then
                 # 使用本地安装方式安装(检查本地ANSIBLE文件是否存在)
                 if [ "$(find_ansible_file)" == "" ]; then
-                    echo -e "\033[31m [${sourcecode_dir}/ansible/] ansible installation files does not exist, system exit.\033[0m"
+                    log_error "[${sourcecode_dir}/ansible/] ansible installation files doesn't exist, please check." true
                     result 1
                 fi
             fi
@@ -331,6 +204,8 @@ function required_check() {
 ############### 主函数入口 ###############
 # 参数${1}表示手动执行脚本还是自动执行脚本方式
 # 参数${2}是否开启DEBUG模式
+# 参数${3}脚本所在的根目录（share workspace）
+# 参数${4}批量执行标识(true or false)
 is_manual_script=${1}
 is_open_debug=${2}
 if [ -z "${is_manual_script}" ]; then
@@ -339,4 +214,4 @@ fi
 if [ -z "${is_open_debug}" ]; then
     is_open_debug=false
 fi
-manual_script_action ${is_manual_script} ${is_open_debug} required_check check_setup_ansible_result setup_and_config_ansible_result
+manual_script_action ${is_manual_script} ${is_open_debug} required_check check_setup_ansible_result setup_and_config_ansible_result ${4}

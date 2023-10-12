@@ -1,5 +1,5 @@
-host_ip,host_name,host_group
-9.88.49.40,arm40,ccsccp
-9.88.49.42,arm42,ntp_server_ip
-9.88.49.45,arm45,ntp_client_ip
-9.88.49.47,arm47,ccs
+host_ip,host_name,host_group,host_expansion,host_compute_ip,host_storage_ip
+9.88.49.40,arm40,ldap_client,0,23.1.1.1,23.1.1.2
+9.88.49.42,arm42,ntp_server,0,23.1.1.3,23.1.1.4
+9.88.49.45,arm45,ntp_client,0
+9.88.49.47,arm47,ccsccp,0

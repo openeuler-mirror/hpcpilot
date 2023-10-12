@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
+
 ######################################################################
-# 脚本描述：安装配置NTP客户端端自动化脚本                                    #
+# 脚本描述：安装配置Chrony服务端自动化脚本                                   #
 # 注意事项：无                                                          #
 ######################################################################
 
@@ -15,7 +16,9 @@ fi
 source ${base_directory}/common.sh ${1}
 # 引用公共函数文件结束
 
-#NTP服务端IP地址
+#ntp服务端IP
 ntp_server_ip=$(get_ini_value service_conf ntp_server_ip)
+#ntp服务端允许同步的网段
+ntp_allow_ip=$(get_ini_value service_conf ntp_allow_ip)
 
-ansible-playbook -e "ntp_server_ip=${ntp_server_ip}"  ${base_directory}/service_script/install_ntp_client.yml
+ansible-playbook -e "ntp_server_ip=${ntp_server_ip} ntp_allow_ip=${ntp_allow_ip}" ${base_directory}/service_script/install_chrony_server.yml
