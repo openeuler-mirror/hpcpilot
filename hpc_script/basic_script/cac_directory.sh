@@ -40,6 +40,8 @@ function create_directory() {
             mkdir -m 755 -p ${cons_root_dir}${cons_second_dir}${third_dir}
         fi
     done
+    # 创建DonauKit业务目录
+    . ${base_directory}/basic_script/add_donau_dir.sh ${cons_root_dir}
     log_info "Service business planning directories has been created." false
 }
 

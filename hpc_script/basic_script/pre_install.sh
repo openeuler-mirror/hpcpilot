@@ -61,6 +61,7 @@ function remove_ldap_server() {
         yum remove -y migrationtools
         rm -rf /etc/openldap /var/lib/ldap
         rm -rf /root/ldap-sync/
+        userdel ldapDemo
     fi
     return 0
 }
@@ -74,6 +75,7 @@ function remove_ldap_client() {
         yum remove -y oddjob
         yum remove -y oddjob-mkhomedir
         rm -rf /var/cache/ldap
+        userdel ldapDemo
     fi
     return 0
 }

@@ -1,9 +1,9 @@
 - name: install ldap cli
-  hosts: ldap_client
+  hosts: "{{ hosts }}"
   gather_facts: False
   vars:
     ldap_server_ip: <ldap_server_ip>
-    ldap_login_password: <ldap_login_password>
+    ldap_login_password: <ldap_login_psd>
   tasks:
   - name: install services
     shell: yum -y install nss-pam-ldapd pam_ldap openldap-clients oddjob oddjob-mkhomedir

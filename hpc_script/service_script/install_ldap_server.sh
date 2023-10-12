@@ -7,7 +7,6 @@
 # Non-HA mode: mandotory parameters: MASTER_IP ROOT_LOGIN_PW         #
 # 注意事项：无                                                          #
 ######################################################################
-
 # 引用公共函数文件开始
 if [ "${1}" == "opt" ]; then
   # 定义脚本文件、配置文件存放目录
@@ -35,7 +34,7 @@ ldap_domain=$(get_ini_value service_conf ldap_domain_name ldap01.huawei.com)
 # 根据ldap服务访问域名获取dc值(array_dc[0]=huawei,array_dc[1]=com)
 array_dc=($(get_ldapdc_by_domain))
 # 服务器节点ROOT登录密码
-root_login_password=$(get_ini_value service_conf common_sys_root_password)
+root_login_password=$(get_ini_value common_global_conf common_sys_root_password)
 # 获取本机IP
 IP_ADDR=$(ifconfig -a 2> /dev/null | grep inet | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | tr -d "addr:")
 
@@ -80,7 +79,7 @@ function scp_to_remote_command() {
   local target_path="$3"
   local pw="$4"
   echo "remote_ip: ${ip} source_path: ${source_path} target_path: ${target_path} passwd: ${pw}"
-  ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname"
+  ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname" 1>/dev/null 2>/dev/null
   if [ 0 = $? ]; then
     scp -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -q "${source_path}" root@${ip}:"${target_path}"
   else
@@ -98,7 +97,7 @@ function selinux_firewall_check() {
       log_info "Disabling SELinux..." true
       sed -i '/SELINUX/s/enforcing/disabled/' /etc/selinux/config && setenforce 0
       log_info "Operating system needs to be restarted, please run the reboot command." true
-      exit_and_cleanENV 0
+      exit 0
   fi
   log_info "Disabling firewalld..." true
   systemctl stop firewalld
@@ -109,7 +108,7 @@ function selinux_firewall_check() {
       log_info "The firewall has been disabled." true
   else
       log_error "Failed to disable the firewall." true
-      exit_and_cleanENV 255
+      exit 255
   fi
 }
 
@@ -171,13 +170,13 @@ function deploy_ldap_service() {
         yum -y install openldap openldap-clients openldap-servers openldap-devel migrationtools
         if [ $? -ne 0 ]; then
             log_error "Failed to install the LDAP service." true
-            exit_and_cleanENV 255
+            exit 255
         fi
     elif [ $OS_TYPE = "CentOS" ]; then
         yum -y install openldap compat-openldap openldap-clients openldap-servers openldap-servers-sql openldap-devel migrationtools
         if [ $? -ne 0 ]; then
             log_error "Failed to install the LDAP service." true
-            exit_and_cleanENV 255
+            exit 255
         fi
     fi
     log_info "ldap version: $(slapd -VV)" true
@@ -196,7 +195,7 @@ function deploy_ldap_service() {
         log_info "Basic configuration of OpenLDAP is complete." true
     else
         log_error "Basic configuration of OpenLDAP is failed." true
-        exit_and_cleanENV 255
+        exit 255
     fi
   
     systemctl enable slapd && systemctl start slapd
@@ -204,13 +203,13 @@ function deploy_ldap_service() {
         log_info "Slapd service is running properly." true
     else
         log_error "Slapd service is running abnormally." true
-        exit_and_cleanENV 255
+        exit 255
     fi
 
     netstat -antup | grep 389 | grep slapd
     if [ $? != 0 ]; then
         log_error "ERROR: The slapd service listening port is abnormal." true
-        exit_and_cleanENV 255
+        exit 255
     else
         log_info "The slapd service listening port is normal." true
     fi
@@ -317,8 +316,8 @@ function ssh_key_conf() {
 function master_slave_trust_conf() {
     if [ -n "$NODE_PRI" ]; then
         log_info "Configuring /etc/hosts..." true
-        local master_host_name=$(ssh root@${ldap_master_ip} "hostname")
-        local slave_host_name=$(ssh root@${ldap_slave_ip} "hostname")
+        local master_host_name=$(ansible ${ldap_master_ip} -m shell -a 'hostname' | awk '/stdout/ {print $2}' | tr -d '"')
+        local slave_host_name=$(ansible ${ldap_slave_ip} -m shell -a 'hostname' | awk '/stdout/ {print $2}' | tr -d '"')
         echo "${ldap_master_ip} $master_host_name" >>/etc/hosts
         echo "${ldap_slave_ip} $slave_host_name" >>/etc/hosts
     fi
@@ -450,7 +449,7 @@ EOF
 #!/bin/bash
 ldapPid=\$(ps -ef |grep /usr/sbin/slapd|grep -v grep|awk '{print $2}'|grep -v PID)
 if [ "\$ldapPid" == "" ]; then
-	systemctl stop keepalived.service
+	systemctl start slapd.service
 	exit 1
 else
 	exit 0
@@ -572,7 +571,7 @@ EOF
     log_info "TLS/SSL has been integrated into the service order." true
   else
     log_error "Failed to integrate TSL/SSL into the service order." true
-    exit_and_cleanENV 255
+    exit 255
   fi
 }
 
@@ -676,12 +675,12 @@ function ldap_service_installation_and_deployment() {
         ping -c2 -i0.3 -W1 ${ldap_master_ip}
         if [ $? != 0 ]; then
             log_error "Ping ${ldap_master_ip} failed, The LDAP service installation is terminated." true
-            exit_and_cleanENV 255
+            exit 255
         fi
         ping -c2 -i0.3 -W1 ${ldap_slave_ip}
         if [ $? != 0 ]; then
             log_error "Ping ${ldap_slave_ip} failed, The LDAP service installation is terminated." true
-            exit_and_cleanENV 255
+            exit 255
         fi
 
         ssh_command "${ldap_master_ip}" "export NODE_PRI=master && sh $0 ${root_dir}" "${root_login_password}" "true"

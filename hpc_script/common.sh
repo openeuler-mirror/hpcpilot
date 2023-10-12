@@ -97,7 +97,7 @@ function test_ansible() {
       fi
       if [ $count -eq 3 ]; then
         log_tips "The password has been incorrect for more than three times. The system automatically logs out." true
-        exit_and_cleanENV 0
+        exit 0
       fi
     done
 
@@ -810,6 +810,23 @@ function ldap_is_HA() {
     fi
 }
 
+# 读取输入的返回值为yes还是no
+# 调用方式：函数名 提示语（不用包含[y/n]，本函数会附加）
+# 返回值：1=yes，0=no
+# 调用举例：`read_input_yes_or_no` "do you need to \033[5;31mreboot \033[0;33moperating system immediately?"
+function read_input_yes_or_no() {
+    while true
+    do
+        read -r -p "$(echo -e "\033[33m${1} [y/n]\033[0m")" input
+        if [[ -z ${input} ]] || [[ -z "$(echo "YES Y" | grep -w -i ${input})" && -z "$(echo "NO N" | grep -w -i ${input})" ]]; then
+          log_tips "Invalid input parameter [${input}], please enter again." true
+        elif [ -n "$(echo "YES Y" | grep -w -i ${input})" ]; then
+            return 1
+        else
+            return 0
+        fi
+    done
+}
 # 读取hostname.csv文件并生成/etc/hosts文件
 # 调用方式：函数名
 # 返回值：无
@@ -844,7 +861,69 @@ function create_etc_hosts() {
         echo -ne "${hosts_content}" >/etc/hosts
     else
         log_error "[${hostname_file}] file doesn't exist, please check." false
-        exit_and_cleanENV 1
+        exit 1
+    fi
+}
+
+# 检查/etc/hosts文件中ip地址的连通性
+# 调用方式：函数名
+# 返回值：无
+# 调用举例：`is_ip_reachable`
+# TODO 限制并发数量，当前测试/etc/hosts文件ip数量2000执行时间约6s，可正常执行。
+function is_ip_reachable() {
+    # 在/tmp目录下生成临时记录不可达ip的文件
+    tmp_unreachable_ip_txt=${operation_log_path}/unreachable_ip_txt.$$
+    touch $tmp_unreachable_ip_txt
+    # 并发循环ping文件/etc/hosts中的ip地址，不可达的记录到临时文件。
+    for ip in `tail -n +3 /etc/hosts | awk '{print $1}'`; do
+        {
+        ping -c2 -i0.3 -W1 $ip &>/dev/null
+        if [ $? -ne 0 ]
+        then
+            echo $ip >> $tmp_unreachable_ip_txt
+        fi
+        }&
+    done
+    wait
+
+    unreachable_ip_count=`cat $tmp_unreachable_ip_txt | wc -l`
+    # 不可达ip数量大于10个时，将不可达ip的临时文件保存为/tmp/unreachable_ip_save.txt，提醒用户查看并检查，程序退出。
+    if [ $unreachable_ip_count -gt 10 ]
+        then
+            cp $tmp_unreachable_ip_txt ${operation_log_path}/unreachable_ip_save.txt
+            log_error "\033[031m $unreachable_ip_count ip are unreachable. Check or Delete Unreachable ip and Rerun. For unreachable Ip list,see the file ${operation_log_path}/unreachable_ip_save.txt.\033[0m"
+            rm -rf $tmp_unreachable_ip_txt
+            return 1
+    # 不可达ip数量小于10个但是大于0时，将不可达ip列表直接打印到屏幕中,提示用户进行检查。程序退出。
+    elif [ $unreachable_ip_count -gt 0 ]
+        then
+            log_error "\033[031m $unreachable_ip_count ip are unreachable。Check or Delete Unreachable ip and Rerun.Unreachable IP list:\033[0m \n `cat $tmp_unreachable_ip_txt`"
+            rm -rf $tmp_unreachable_ip_txt
+            return 1
+    fi
+    return 0
+}
+
+
+function add_utf8() {
+    if [[ "$(tail /etc/profile)" =~ "LANG='en_US.UTF-8'" ]]; then
+        log_info "en_US.UTF-8 has been configured." true
+    else
+        # 5.4追加内容到配置文件中
+        echo -ne "LANG='en_US.UTF-8'" >>/etc/profile
+    fi
+}
+
+# 验证主机分组名称合法性 （是否在ccsccp agent scheduler portal cli ntp_server ntp_client ldap_cilent之中)
+# 调用方式：函数名 主机组名
+# 返回值：0=合法 1=非法
+# 调用举例：`valid_host_group_name` ${1}
+function valid_host_group_name() {
+    valid_host_groups_lists="ccsccp agent scheduler portal cli ntp_server ntp_client ldap_client"
+    if [[ " ${valid_host_groups_lists[@]} " =~ " ${1} "  ]]; then
+           return 0
+    else
+           return 1
     fi
 }
 
@@ -882,6 +961,12 @@ function create_ansible_hosts() {
                 if [ -n "${group_names}" ]; then
                     local arr_group=(${group_names//&/ })
                     for group_name in "${arr_group[@]}"; do
+                        # 主机分组名称合法性校验
+                        valid_host_group_name $group_name
+                        if [ $? == 1 ]; then
+                            log_error  "The group_name '$group_name' in hostname.csv is not vaild in the line where the ip is '$file_host_ip'. Make sure the group_name is in '$valid_host_groups_lists'." true
+                            exit 1
+                        fi
                         if [ -n "$(echo ${group_name} | grep -i -w 'ccsccp')" ]; then
                             if [ -z "${ccsccp}" ]; then
                                 ccsccp="${file_host_ip}"
@@ -1006,7 +1091,7 @@ function create_ansible_hosts() {
         fi
     else
         log_error "[${hostname_file}] file doesn't exist, please check." false
-        exit_and_cleanENV 1
+        exit 1
     fi
 }
 
@@ -1030,35 +1115,9 @@ function check_run_expansion() {
         done
     else
         log_error "[${hostname_file}] file doesn't exist, please check." false
-        exit_and_cleanENV 1
+        exit 1
     fi
     echo ${is_expansion}
-}
-
-# 系统退出并清理密码
-# 调用方式：exit_and_cleanENV 退出编码 是否手动执行（true or false）
-# 返回值：无
-# 调用举例：`exit_and_cleanENV` 0 true
-function exit_and_cleanENV() {
-    if [ -z "${auto_run_flag}" ] || [ "${auto_run_flag}" == "false" ]; then
-        exit ${1}
-    fi
-    if [ -z "${2}" ] || [ "${2}" == "true" ]; then
-        #清理配置文件涉及到的密码
-        modify_ini_value common_global_conf common_sys_user_password ""
-        modify_ini_value common_global_conf common_sys_root_password ""
-        modify_ini_value service_conf ldap_login_password ""
-        # 清理ANSIBLE运行日志
-        if [ -d "${ansible_log_path}" ]; then
-            rm -rf ${ansible_log_path}/*
-        fi
-        # 清理删除hpcpilot.pid
-        if [ -f "/var/log/hpcpilot.pid" ]; then
-            rm -rf /var/log/hpcpilot.pid
-        fi
-        log_warn "Password is cleared, config password when you run scripts again." true
-    fi
-    exit ${1}
 }
 
 function expect_ssh_command() {
@@ -1102,7 +1161,7 @@ function ssh_command() {
     ssh_show=""
     blank_set=""
   fi
-  ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname"
+  ssh root@${ip} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o PasswordAuthentication=no "uname" 1>/dev/null 2>/dev/null
   if [ 0 = $? ]; then
     ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 ${ssh_show} root@${ip} "${cmd}" "${blank_set}"
   else
@@ -1111,26 +1170,6 @@ function ssh_command() {
   local result=$?
   return $result
 }
-
-# 针对异常非法中断处理
-#trap "handle_ctrlc" EXIT
-#function handle_ctrlc() {
-#    log_warn "Abnormal interruption [CTRL+C] exit." false
-#	# 清理配置文件涉及到的密码
-##    modify_ini_value common_global_conf common_sys_user_password ""
-##    modify_ini_value common_global_conf common_sys_root_password ""
-##    modify_ini_value service_conf ldap_login_password ""
-#    # 清理ANSIBLE运行日志
-#    if [ -d "${ansible_log_path}" ]; then
-#        rm -rf ${ansible_log_path}/*  
-#    fi
-#    # 清理删除hpcpilot.pid
-#    if [ -f "/var/log/hpcpilot.pid" ]; then
-#        rm -rf /var/log/hpcpilot.pid
-#    fi
-#    log_warn "Password is cleared, config password when you run scripts again." true
-#    exit 1
-#}
 
 # 检查并安装基础命令
 # 调用方式：basic_commands_install
@@ -1268,4 +1307,24 @@ function load_benchmark_env() {
             log_warn "Unknown module name [${module_name}]." true
         fi
     done
+}
+
+# 判定用户是否存在
+# 调用方式：check_user 用户名称
+# 调用参数：root、ccs_cli
+# 返回值：1、0
+# 调用举例：`check_user` "ccs_cli"
+function check_user() {
+    if [ -z "${1}" ]; then
+        log_error "Username cannot be empty." true
+        return 1
+    fi
+    id -u ${1} > /dev/null 2>&1
+    ret=$?
+    if [ 0 != ${ret} ]; then
+        log_error "Username does not exist." true
+        return 1
+    else
+        return 0
+    fi
 }

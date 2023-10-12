@@ -31,13 +31,15 @@ source ${base_directory}/basic_script/cac_directory.sh false false ${root_dir} f
 source ${base_directory}/basic_script/cac_users.sh false false ${root_dir} false
 source ${base_directory}/basic_script/cas_cuda.sh false false ${root_dir} false
 source ${base_directory}/basic_script/cas_nfs.sh false false ${root_dir} false
+source ${base_directory}/basic_script/cas_chrony.sh false false ${root_dir} false
+source ${base_directory}/basic_script/cas_ldap.sh false false ${root_dir} false
 # 引用函数文件结束
 
 function basic_check_items_msg() {
     echo -e ""
     echo -e "\033[33m=========================基础环境配置待检查项列表=========================\033[0m"
     echo -e "\033[33m==   1. 请使用root用户执行该脚本                                        ==\033[0m"
-    echo -e "\033[33m==   2. 详细执行、错误、警告信息请查看日志[${operation_log_path}]           ==\033[0m"
+    echo -e "\033[33m==   2. 详细执行、错误、警告信息请查看日志[${operation_log_path}]          ==\033[0m"
     echo -e "\033[33m==   3. 运行前请严格按照安装文档要求执行                                ==\033[0m"
     echo -e "\033[33m==   4. 检查日期:$(date '+%Y-%m-%d %H:%M:%S')                                    ==\033[0m"
     echo -e "\033[33m=========================基础环境配置待检查项列表=========================\033[0m"
@@ -51,9 +53,11 @@ function basic_check_items_msg() {
     echo -e "************\033[32m[7]\033[0m  计算节点关闭防火墙检查                  \033[32m[ √ ]\033[0m************"
     echo -e "************\033[32m[8]\033[0m  计算节点Mellanox网卡驱动安装检查        \033[32m[ √ ]\033[0m************"
     echo -e "************\033[32m[9]\033[0m  计算节点CUDAToolkit安装检查             \033[32m[ √ ]\033[0m************"
-    echo -e "************\033[32m[10]\033[0m 计算节点Ulimit配置检查                 \033[32m[ √ ]\033[0m************"
+    echo -e "************\033[32m[10]\033[0m 计算节点Ulimit配置检查                  \033[32m[ √ ]\033[0m************"
     echo -e "************\033[32m[11]\033[0m 计算节点挂载配置存储NFS检查             \033[32m[ √ ]\033[0m************"
     echo -e "************\033[32m[12]\033[0m 计算节点批量创建用户检查                \033[32m[ √ ]\033[0m************"
+    echo -e "************\033[32m[13]\033[0m 计算节点批量检查chrony服务              \033[32m[ √ ]\033[0m************"
+    echo -e "************\033[32m[14]\033[0m 计算节点批量检查ldap服务                \033[32m[ √ ]\033[0m************"
 }
 
 function current_machine_info() {
@@ -109,6 +113,10 @@ function main() {
      # check_nfs_result
      # [13] 计算节点批量创建用户检查
      check_json_users_result
+     # [14] 计算节点批量检查chrony服务
+     check_chrony_result
+     # [15] 计算节点批量检查ldap服务
+     check_ldap_result
      ###############运行日志路径提示###############
      view_log_path
 }

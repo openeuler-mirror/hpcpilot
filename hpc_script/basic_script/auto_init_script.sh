@@ -89,6 +89,20 @@ function init_verify() {
     fi
 }
 
+# 修改/etc/ssh/ssh_config文件，使得避免在未配免密访问其他节点时候频繁需要yes确认
+function edit_ssh_config() {
+    # 首先，检查是否已经存在配置项
+    if grep -q "^StrictHostKeyChecking" /etc/ssh/ssh_config; then
+      # 如果已经存在，则替换原来的配置项
+      sed -i 's/^StrictHostKeyChecking.*/StrictHostKeyChecking no/' /etc/ssh/ssh_config
+    else
+      # 如果不存在，则在文件末尾添加新的配置项,确保本机首次连接时不会提示确认主机密码
+      tee -a /etc/ssh/ssh_config >/dev/null <<EOL
+StrictHostKeyChecking no
+EOL
+    fi
+}
+
 # 主函数入口
 function main() {
     # 检查校验执行初始化脚本的合法性
@@ -118,7 +132,11 @@ function main() {
     log_info "Begin to create /etc/hosts and /etc/ansible/hosts to O&M node" true
     create_ansible_hosts
     create_etc_hosts
+    add_utf8
+    edit_ssh_config
     log_info "Finish to create /etc/hosts and /etc/ansible/hosts to O&M node" true
+    is_ip_reachable
+    return $?
 }
 
 # 主函数程序入口

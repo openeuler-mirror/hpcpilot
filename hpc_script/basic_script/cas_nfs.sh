@@ -87,7 +87,7 @@ function check_nfs_result() {
     else
         echo -e "\033[33m==\033[0m\033[31m  rpcbind服务未安装                                    [ X ]\033[0m          \033[33m==\033[0m"
     fi
-    
+
     if [ "${return_msg[4]}" == "0" ]; then
         echo -e "\033[33m==\033[0m\033[32m  共享目录配置文件[/etc/fstab]配置正常                 [ √ ]\033[0m          \033[33m==\033[0m"
     else
@@ -102,7 +102,7 @@ function setup_nfs_dependent() {
     # 检查nfs_utils服务是否已安装
     if [ "$(rpm -qa nfs-utils)" == "" ]; then
         yum install -y nfs-utils >> ${operation_log_path}/access_all.log 2>&1
-    fi 
+    fi
     # 检查rpcbind服务是否已安装
     if [ "$(rpm -qa rpcbind)" == "" ]; then
         yum install -y rpcbind >> ${operation_log_path}/access_all.log 2>&1
@@ -210,7 +210,7 @@ function required_check() {
     fi
     if [ "$(rpm -qa nfs-utils)" == "" ]; then
         yum install -y nfs-utils >> ${operation_log_path}/access_all.log 2>&1
-    fi 
+    fi
     if [ "$(rpm -qa rpcbind)" == "" ]; then
         yum install -y rpcbind >> ${operation_log_path}/access_all.log 2>&1
     fi

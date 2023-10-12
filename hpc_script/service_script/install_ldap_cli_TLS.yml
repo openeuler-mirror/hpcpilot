@@ -1,9 +1,9 @@
 - name: install ldap cli
-  hosts: ldap_client
+  hosts: "{{ hosts }}"
   gather_facts: False
   tasks:
   - name: install services
-    shell: yum -y install openldap-clients nss-pam-ldapd authconfig sssd oddjob oddjob-mkhomedir
+    shell: yum -y install openldap-clients nss-pam-ldapd authconfig sssd oddjob oddjob-mkhomedir migrationtools
   - name: mkdir cacerts
     shell: mkdir -p /etc/openldap/cacerts
   - name: copy ldap.crt

@@ -216,7 +216,7 @@ function config_network_yum() {
         fi
     else
         log_info "Network yum source is not configured successfully, system exit." true
-        exit_and_cleanENV 1
+        exit 1
     fi
 }
 
@@ -244,7 +244,7 @@ function mount_local_yum() {
     # 3. 检查是否挂载成功
     if [ -z "$(df -h | grep -o ${yum_install_path})" ]; then
         log_error "[${1}] mounting failed, check the mounting process." false
-        exit_and_cleanENV 1
+        exit 1
     else
         mount ${yum_install_path} >> ${operation_log_path}/access_all.log 2>&1
         if [ ! -d "/etc/yum.repos.bak/" ]; then

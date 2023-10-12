@@ -21,9 +21,42 @@ else
     sourcecode_dir=/${root_dir}/software/sourcecode
 fi
 source ${base_directory}/common.sh ${root_dir}
+
+# 脚本退出或异常中断处理
+trap "trap_exit_ctrlC" EXIT
+
+# 脚本退出或异常中断处理，清理密码和安装日志
+function trap_exit_ctrlC() {
+    # 获取退出状态必须放在函数的第一行
+    local exit_status=$?
+    log_warn "Abnormal interruption [CTRL+C] exit." false
+	# 清理配置文件涉及到的密码
+    clean_pw_all
+    # 清理ANSIBLE运行日志
+    if [ -d "${ansible_log_path}" ] && [ "${ansible_log_path}" != "/" ]; then
+        rm -rf ${ansible_log_path}/*
+    fi
+    # 清理删除hpcpilot.pid
+    if [ -f "/var/log/hpcpilot.pid" ]; then
+        rm -rf /var/log/hpcpilot.pid
+    fi
+    log_warn "Password is cleared, config password when you run scripts again." true
+}
+
+# 清除所有节点密码
+function clean_pw_all() {
+    # 清理配置文件涉及到的密码
+    while IFS= read -r line; do
+        if grep -q -e "_passwor" <<< "${line}"; then
+            item=$(echo "$line" | awk -F= '{print $1}')
+            ansible all -m shell -a "sed -i 's/${item}.*/${item}=/g' ${ini_file}" > /dev/null 2>&1
+        fi
+    done < ${ini_file}
+}
+
 # 引用函数文件结束
 # 服务器节点ROOT登录密码
-root_login_password=$(get_ini_value service_conf common_sys_root_password)
+root_login_password=$(get_ini_value common_global_conf common_sys_root_password)
 # 并发执行判断（不同窗口不能同时执行脚本[并发]）
 check_concurrent_execution
 if [ "$?" == "1" ]; then
@@ -230,6 +263,18 @@ function required_check() {
 
 # 该方法主要用来判断提醒用户是否要进行初始化操作
 function init_tips_check() {
+    # 刷脚本的权限和属主
+    if [ -n "${sourcecode_dir}" ] && [ -n "${base_directory}" ]; then
+      chmod 755 ${sourcecode_dir}/*
+      chown root:root ${sourcecode_dir}/*
+      chmod +x ${base_directory}/*.sh
+      chmod +x ${base_directory}/basic_script/*.sh
+      chmod +x ${base_directory}/service_script/*.sh
+      chmod +x ${base_directory}/benchmark_script/*.sh
+    else
+      log_error "The tool directory is incorrect. Please check." true
+      exit 1
+    fi
     yum list 1>/dev/null 2>/dev/null
     if [ $? -eq 1 ] && [ "$(rpm -qa ansible)" == "" ]; then
         return 1
@@ -257,23 +302,6 @@ function basic_menu() {
             test_ansible
             # 同步/root/.ssh/到其它所有节点
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/root/.ssh/ dest=/root/.ssh/ mode=0600"
-            # 脚本及依赖软件同步
-            ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${base_directory}/ dest=${base_directory}/ mode=0755"
-            if [ -d "${sourcecode_dir}/jq/" ] && [ -n "$(ls ${sourcecode_dir}/jq/)" ]; then
-                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/jq dest=${sourcecode_dir}/"
-            fi
-            if [ -d "${sourcecode_dir}/ansible/" ] && [ -n "$(ls ${sourcecode_dir}/ansible/)" ]; then
-                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/ansible dest=${sourcecode_dir}/"
-            fi
-            local tcsh_rpm=$(find_file_by_path ${sourcecode_dir}/ tcsh rpm)
-            if [ -n "${tcsh_rpm}" ]; then
-                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${tcsh_rpm} dest=${sourcecode_dir}/"
-            fi
-            # 安装LDAP服务端所需的依赖包
-            local migrationtools=$(find_file_by_path ${sourcecode_dir}/ migrationtools rpm)
-            if [ -n "${migrationtools}" ]; then
-                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${migrationtools} dest=${sourcecode_dir}/"
-            fi
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${mellanox_driver_name} dest=${sourcecode_dir}/"
             # 同步http-local.repo文件到其它节点配置yum client
             # 使用YUM网络源必须先要关闭防火墙
@@ -284,34 +312,31 @@ function basic_menu() {
             ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "yum clean all && yum makecache"
             # YUM源挂载后检查并安装基础命令
             ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 1"
-            # 同步/etc/hosts文件到其它节点（先生成在同步）
+            # 同步/etc/hosts文件到其它节点（先生成后同步）
             create_etc_hosts
-            ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
+            ansible all":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
+            ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/profile dest=/etc/"
             # 执行批量安装配置脚本
             ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/auto_install_script.sh ${root_dir}" -t ${ansible_log_path}
             ansible_run_stats
             # 提示重启节点配置生效
             # 重启除运维节点所有节点
-            while true 
-            do
-                read -r -p "$(echo -e "\033[33mdo you need to reboot operating system immediately? [y/n]\033[0m")" input
-                if [ -n "$(echo "YES Y" | grep -w -i ${input})" ]; then
-                    log_tips "Rebooting... it may take several minutes, please wait." true
-                    if [ -n "$(cat /etc/system-release | grep -i -w openEuler)" ]; then
-                        # 欧拉系统自带ANSIBLE不支持reboot模块
-                        ansible ${ansible_group_name} -m shell -a "reboot"
-                    else
-                        ansible ${ansible_group_name} -m reboot
-                    fi
-                    break
-                elif [ -n "$(echo "NO N" | grep -w -i ${input})" ]; then
-                    break
-                else
-                    log_tips "Invalid input parameter [${input}], please enter again [y/n]." true
-                fi    
-            done
+            read_input_yes_or_no "do you need to \033[5;31mreboot \033[0;33moperating system immediately?"
+            if [ $? == 1 ]; then
+              log_tips "Rebooting... it may take several minutes, please wait." true
+              if [ -n "$(cat /etc/system-release | grep -i -w openEuler)" ]; then
+                  # 欧拉系统自带ANSIBLE不支持reboot模块
+                  ansible ${ansible_group_name} -m shell -a "reboot"
+              else
+                  ansible ${ansible_group_name} -m reboot
+              fi
+            fi
+
         elif [ "${action_basic}" == "yum installation and configuration scripts." ]; then
             test_ansible
+            # 关闭防火墙，确保单步可执行
+            ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cac_firewall.sh false false ${root_dir} true"
+            ansible ${ansible_group_name}":!"${om_machine_ip} -m file -a "path=/etc/yum.repos.bak state=directory"
             ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "mv -f /etc/yum.repos.d/* /etc/yum.repos.bak/"
             ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${base_directory}/http-local.repo dest=/etc/yum.repos.d/"
             ansible ${ansible_group_name}":!"${om_machine_ip} -m shell -a "yum clean all && yum makecache" -t ${ansible_log_path}
@@ -343,6 +368,8 @@ function basic_menu() {
         elif [ "${action_basic}" == "mellanox installation and configuration scripts." ]; then
             log_tips "Installing mellanox driver... it may take several minutes, please wait."
             test_ansible
+            local mellanox_driver_name=$(find_file_by_path ${sourcecode_dir}/ MLNX_OFED_LINUX tgz)
+            ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${mellanox_driver_name} dest=${sourcecode_dir}/"
             ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/cas_mellanox.sh false false ${root_dir} true" -t ${ansible_log_path}
             ansible_run_stats
         elif [ "${action_basic}" == "ulimit installation and configuration scripts." ]; then
@@ -352,15 +379,20 @@ function basic_menu() {
         elif [ "${action_basic}" == "/etc/hosts synchronize." ]; then
             test_ansible
             create_etc_hosts
-            ansible all -m copy -a "src=/etc/hosts dest=/etc/" -t ${ansible_log_path}
+            ansible all":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
+            ansible all -m copy -a "src=/etc/profile dest=/etc/" -t ${ansible_log_path}
             ansible_copy_stats
         elif [ "${action_basic}" == "return to upper-level menu." ]; then
             main_menu
         elif [ "${action_basic}" == "system exit." ]; then
-            exit_and_cleanENV 0
-        else 
+            exit 0
+        else
             log_error "selected drop-down list does not match the defined, please select again." true
         fi
+
+        # 执行完毕后自动回显当前菜单
+        echo
+        basic_menu
     done
 }
 
@@ -368,15 +400,23 @@ function basic_menu() {
 function service_menu() {
     select action_ntp_ldap in "automatic chrony server and client script." "automatic chrony_server script." "automatic chrony_client script." "automatic ldap server and client script." "automatic ldap_server script." "automatic ldap_client script." "return to upper-level menu." "system exit."; do
         if [ "${action_ntp_ldap}" == "automatic chrony server and client script." ]; then
-            valid_ntp_chrony
-            if [ "${?}" == "0" ]; then
-                ${base_directory}/service_script/install_chrony_server.sh ${root_dir}
-                ${base_directory}/service_script/install_chrony_client.sh ${root_dir}
+            if [ "${ansible_group_name}" != "expansion" ];then
+                valid_ntp_chrony
+                if [ "${?}" == "0" ]; then
+                    ${base_directory}/service_script/install_chrony_server.sh ${root_dir}
+                    ${base_directory}/service_script/install_chrony_client.sh ${root_dir}
+                fi
+            else
+              log_error "Node expansion does not support this operation." true
             fi
         elif [ "${action_ntp_ldap}" == "automatic chrony_server script." ]; then
-            valid_ntp_chrony
-            if [ "${?}" == "0" ]; then
-                ${base_directory}/service_script/install_chrony_server.sh ${root_dir}
+            if [ "${ansible_group_name}" != "expansion" ];then
+                 valid_ntp_chrony
+                if [ "${?}" == "0" ]; then
+                    ${base_directory}/service_script/install_chrony_server.sh ${root_dir}
+                fi
+            else
+                log_error "Node expansion does not support this operation." true
             fi
         elif [ "${action_ntp_ldap}" == "automatic chrony_client script." ]; then
             valid_ntp_chrony
@@ -384,32 +424,40 @@ function service_menu() {
                 ${base_directory}/service_script/install_chrony_client.sh ${root_dir}
             fi
         elif [ "${action_ntp_ldap}" == "automatic ldap server and client script." ]; then
-            valid_ldap_server
-            if [ "${?}" == "0" ]; then
-                ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 3"
-                if [ "$?" == "0" ]; then
-                  ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+            if [ "${ansible_group_name}" != "expansion" ];then
+                valid_ldap_server
+                if [ "${?}" == "0" ]; then
+                    ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 3"
+                    if [ "$?" == "0" ]; then
+                      ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+                    fi
+                    log_info "Generate and update /etc/hosts file (domain name IP address mapping)." true
+                    # 生成刷新/etc/hosts文件（域名IP映射）
+                    create_etc_hosts
+                    # 同步到其它节点
+                    ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
+                    ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 4"
+                    ${base_directory}/service_script/install_ldap_client.sh ${root_dir}
                 fi
-                log_info "Generate and update /etc/hosts file (domain name IP address mapping)." true
-                # 生成刷新/etc/hosts文件（域名IP映射）
-                create_etc_hosts
-                # 同步到其它节点
-                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
-                ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 4"
-                ${base_directory}/service_script/install_ldap_client.sh ${root_dir}
+            else
+                log_error "Node expansion does not support this operation." true
             fi
         elif [ "${action_ntp_ldap}" == "automatic ldap_server script." ]; then
-            valid_ldap_server
-            if [ "${?}" == "0" ]; then
-                ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 3"
-                if [ "$?" == "0" ]; then
-                  ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+            if [ "${ansible_group_name}" != "expansion" ];then
+                valid_ldap_server
+                if [ "${?}" == "0" ]; then
+                    ansible ${ansible_group_name} -m shell -a "${base_directory}/basic_script/pre_install.sh ${root_dir} 3"
+                    if [ "$?" == "0" ]; then
+                      ${base_directory}/service_script/install_ldap_server.sh ${root_dir}
+                    fi
+                    log_info "Generate and update /etc/hosts file (domain name IP address mapping)." true
+                    # 生成刷新/etc/hosts文件（域名IP映射）
+                    create_etc_hosts
+                    # 同步到其它节点
+                    ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
                 fi
-                log_info "Generate and update /etc/hosts file (domain name IP address mapping)." true
-                # 生成刷新/etc/hosts文件（域名IP映射）
-                create_etc_hosts
-                # 同步到其它节点
-                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=/etc/hosts dest=/etc/"
+            else
+                log_error "Node expansion does not support this operation." true
             fi
         elif [ "${action_ntp_ldap}" == "automatic ldap_client script." ]; then
             valid_ldap_client
@@ -420,10 +468,13 @@ function service_menu() {
         elif [ "${action_ntp_ldap}" == "return to upper-level menu." ]; then
             main_menu
         elif [ "${action_ntp_ldap}" == "system exit." ]; then
-            exit_and_cleanENV 0
+            exit 0
         else 
             log_error "selected drop-down list does not match the defined, please select again." true
         fi
+        # 执行完毕后自动回显当前菜单
+        echo
+        service_menu
     done
 }
 
@@ -453,10 +504,13 @@ function benchmark_menu() {
         elif [ "${action_benchmark}" == "return to upper-level menu." ]; then
             main_menu
         elif [ "${action_benchmark}" == "system exit." ]; then
-            exit_and_cleanENV 0
+            exit 0
         else 
             log_error "selected drop-down list does not match the defined, please select again." true
         fi
+        # 执行完毕后自动回显当前菜单
+        echo
+        benchmark_menu
     done
 }
 
@@ -473,20 +527,43 @@ function mount_storage_menu() {
         elif [ "${action_mount}" == "return to upper-level menu." ]; then
             main_menu
         elif [ "${action_mount}" == "system exit." ]; then
-            exit_and_cleanENV 0
+            exit 0
         else 
             log_error "selected drop-down list does not match the defined, please select again." true
         fi
+        # 执行完毕后自动回显当前菜单
+        echo
+        mount_storage_menu
     done
 }
 
 # 主菜单
 function main_menu() {
     # 手动选择需要执行的方法
-    log_tips "Welcome to hpcpilot, please select the script to execute." true
     select action in "auto run initialization script." "auto run operating system configuration script." "auto run mount storage device scripts." "auto run chrony ldap service installation script." "auto run donaukit users and directory script." "auto run benchmark tools and cuda toolkit installation scripts." "auto run check scripts." "system exit."; do
         if [ "${action}" == "auto run initialization script." ]; then
             ${base_directory}/basic_script/auto_init_script.sh ${root_dir}
+            if [ $? -ne 0 ] ; then
+                exit  1
+            fi
+            test_ansible
+            # 脚本及依赖软件同步
+            ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${base_directory}/ dest=${base_directory}/ mode=0755"
+            if [ -d "${sourcecode_dir}/jq/" ] && [ -n "$(ls ${sourcecode_dir}/jq/)" ]; then
+                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/jq dest=${sourcecode_dir}/"
+            fi
+            if [ -d "${sourcecode_dir}/ansible/" ] && [ -n "$(ls ${sourcecode_dir}/ansible/)" ]; then
+                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/ansible dest=${sourcecode_dir}/"
+            fi
+            local tcsh_rpm=$(find_file_by_path ${sourcecode_dir}/ tcsh rpm)
+            if [ -n "${tcsh_rpm}" ]; then
+                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${tcsh_rpm} dest=${sourcecode_dir}/"
+            fi
+            # 安装LDAP服务端所需的依赖包
+            local migrationtools=$(find_file_by_path ${sourcecode_dir}/ migrationtools rpm)
+            if [ -n "${migrationtools}" ]; then
+                ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${sourcecode_dir}/${migrationtools} dest=${sourcecode_dir}/"
+            fi
         elif [ "${action}" == "auto run operating system configuration script." ]; then
             basic_menu
         elif [ "${action}" == "auto run mount storage device scripts." ]; then
@@ -518,8 +595,7 @@ function main_menu() {
                     # ansible all -m file -a "path=/${root_dir}/hpcpilot/ state=absent"
                     log_tips "Scripts move completed, follow-up operations are performed in the shared directory." false
                     # 在共享目录执行的提示，闪烁显示，以比较明确的提示用户
-                    echo -e "\033[5m Scripts move completed, follow-up operations are performed in the shared directory. Password is cleared\033[0m"
-                    break
+                    echo -e "\033[1;33;42m Scripts move completed, follow-up operations are performed in the shared directory.\033[0m\n \033[33muse 'cd $share_dir/software/tools/hpcscript'\033[0m"
                 fi
             fi
         elif [ "${action}" == "auto run benchmark tools and cuda toolkit installation scripts." ]; then
@@ -543,6 +619,9 @@ function main_menu() {
         else
             log_error "selected drop-down list does not match the defined, please select again." true
         fi
+        # 执行完毕后自动回显当前菜单
+        echo
+        main_menu
     done
 }
 
@@ -550,7 +629,7 @@ function main_menu() {
 function main() {
     required_check
     if [ "$?" == "1" ]; then
-        exit_and_cleanENV 1
+        exit 1
     fi
     init_tips_check
     if [ "$?" == "1" ]; then
@@ -561,15 +640,17 @@ function main() {
                 ${base_directory}/basic_script/auto_init_script.sh ${root_dir}
                 break
             elif [ -n "$(echo "NO N" | grep -w -i ${input})" ]; then
-                exit_and_cleanENV 0
+                exit 0
             else
                 log_error "Invalid input parameter [${input}], please enter again [y/n]." true
             fi    
         done
     fi
+    log_tips "Welcome to hpcpilot, please input ssh PassW for ansible." true
+    test_ansible
+    ansible ${ansible_group_name}":!"${om_machine_ip} -m copy -a "src=${base_directory}/ dest=${base_directory}/ mode=0755"
+    log_tips "Welcome to hpcpilot, please select the script to execute." true
     main_menu
 }
 
 main
-
-exit_and_cleanENV 0

@@ -123,11 +123,13 @@ function setup_and_config_ansible() {
             log_info "Ansible has been installed and does not need to be installed again." true
         else
             # 安装ANSIBLE
-            if [ "$(yum list | grep -F ansible)" == "" ]; then
-                # 使用本地安装方式安装
+            # 使用YUM源安装，当前只适用欧拉系统
+            if [ -n "$(cat /etc/system-release | grep -i -w openEuler)" ]; then
+                yum install -y ansible >> ${operation_log_path}/access_all.log 2>&1
+            else
+                # 其他系统仅支持本地安装 1.麒麟V10_ARM64版本、2.CENTOS7.6_ARM64版本 2.CENTOS8.2_ARM64版本
                 cd ${sourcecode_dir}/ansible/
                 if [ "$(find_ansible_file)" != "" ]; then
-                    # 目前本地安装支持 1.麒麟V10_ARM64版本、2.CENTOS7.6_ARM64版本 2.CENTOS8.2_ARM64版本
                     yum localinstall -y *.rpm >> ${operation_log_path}/access_all.log 2>&1
                     if [ -n "$(cat /etc/system-release | grep "CentOS Linux release 8.2.2004")" ]; then
                         cd /etc/ansible/
@@ -136,9 +138,6 @@ function setup_and_config_ansible() {
                 else
                     log_error "[${sourcecode_dir}/ansible/] ansible files doesn't exist." true
                 fi
-            else
-                # 使用YUM源安装，当前只适用欧拉系统
-                yum install -y ansible >> ${operation_log_path}/access_all.log 2>&1
             fi
             # 检查安装是否成功
             cd /etc/ansible/
@@ -148,6 +147,8 @@ function setup_and_config_ansible() {
             fi
             # 找到host_key_checking = False取消注释。该步骤为取消主机间初次ssh跳转的人机交互。
             remove_match_line_symbol /etc/ansible/ansible.cfg host_key_checking
+            # 找到command_warnings = False取消注释。该步骤可以减少一些无效的告警信息打印
+            remove_match_line_symbol /etc/ansible/ansible.cfg command_warnings
         fi
         # remove_match_line_symbol /etc/ansible/ansible.cfg forks
         remove_match_line_symbol /etc/ansible/ansible.cfg forks

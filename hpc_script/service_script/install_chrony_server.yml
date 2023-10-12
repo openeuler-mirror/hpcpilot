@@ -3,9 +3,9 @@
   gather_facts: False
   tasks:
   - name: stop ntp
-    shell: systemctl stop ntpd.service && systemctl disable ntpd.service
+    shell: systemctl stop ntpd.service || true && systemctl disable ntpd.service || true
     ignore_errors: yes
-  - name: install chrony 
+  - name: install chrony
     shell: yum -y install chrony
   - name: config chrony.conf
     blockinfile:
