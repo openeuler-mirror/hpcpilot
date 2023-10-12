@@ -615,7 +615,7 @@ function main_menu() {
                 ansible_run_stats
             fi
         elif [ "${action}" == "system exit." ]; then
-            exit 0
+            exit_and_cleanENV 0
         else
             log_error "selected drop-down list does not match the defined, please select again." true
         fi

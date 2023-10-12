@@ -286,19 +286,19 @@ function get_property_value() {
     if [[ -z "${key}" || -z "${filePath}" ]]; then
         echo "参数错误，未能指定有效Key。"
         echo "" >&2
-        exit 1
+        exit_and_cleanENV 1
     fi
 
     if [ ! -f ${filePath} ]; then
         echo "属性文件（${filePath}） 不存在。"
         echo "" >&2
-        exit 1
+        exit_and_cleanENV 1
     fi
 
     if [ ! -r ${filePath} ]; then
         echo "当前用户不具有对属性文件（${filePath}）的可读权限。"
         echo "" >&2
-        exit 1
+        exit_and_cleanENV 1
     fi
 
     keyLength=$(echo ${key} | wc -L)
@@ -492,7 +492,7 @@ function manual_script_action() {
         elif [ "${action_var}" == "config or install" ]; then
             ${5}
         elif [ "${action_var}" == "system exit" ]; then
-            exit 0
+            exit_and_cleanENV 0
         else 
             log_error "selected drop-down list does not match the defined, please select again." true
         fi
